@@ -220,7 +220,7 @@ async fn get_theme(
     }
 }
 
-const DEFAULT_THEME: &str = include_str!("../themes/default.css");
+const DEFAULT_THEME: &str = include_str!("../themes/pastel.css");
 
 #[actix_web::main]
 async fn main() -> Result<()> {

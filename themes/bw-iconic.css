@@ -1,0 +1,62 @@
+/* bw-iconic — high-contrast poster style. Solid black buildings, black
+ * water, Impact labels in all caps. Magazine cover feel. */
+
+.background { fill: #ffffff; }
+
+.layer-landuse :where(polygon, path) { fill: none; stroke: none; }
+
+.layer-leisure :where(polygon, path) { fill: #e8e8e8; stroke: none; }
+.leisure-park { fill: #d4d4d4; }
+
+.layer-water :where(polygon, path), .water { fill: #000000; stroke: none; }
+.layer-waterway polyline, .layer-waterway path { fill: none; stroke: #000000; stroke-width: 2.4; }
+.coastline { fill: none; stroke: #000000; stroke-width: 4; }
+
+.layer-building :where(polygon, path) { fill: #000000; stroke: none; }
+
+.layer-rail polyline, .layer-rail path {
+  fill: none; stroke: #000000; stroke-width: 1.8;
+  stroke-dasharray: 5 5;
+}
+
+.layer-road-casings polyline, .layer-road-casings path { stroke: none; }
+
+.layer-road polyline, .layer-road path {
+  fill: none;
+  stroke: #000000;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+}
+.road-path        { stroke-width: 0.4; stroke-dasharray: 1 2; opacity: 0.5; }
+.road-service     { stroke-width: 0.9; }
+.road-residential { stroke-width: 1.6; }
+.road-tertiary    { stroke-width: 3.0; }
+.road-secondary   { stroke-width: 4.2; }
+.road-primary     { stroke-width: 5.6; }
+.road-trunk       { stroke-width: 7.0; }
+.road-motorway    { stroke-width: 8.6; }
+.road-other       { stroke-width: 1.0; }
+
+.layer-road-labels text {
+  font-family: Impact, "Arial Black", Helvetica, sans-serif;
+  fill: #000000;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 2.6;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.layer-places text {
+  font-family: Impact, "Arial Black", Helvetica, sans-serif;
+  fill: #000000;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 3;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.place-city { letter-spacing: 0.28em; }
+.place-town { letter-spacing: 0.20em; }
+.place-village { letter-spacing: 0.08em; }
+.place-suburb { letter-spacing: 0.06em; opacity: 0.65; }

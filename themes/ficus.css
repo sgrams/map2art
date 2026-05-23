@@ -1,0 +1,67 @@
+/* ficus — deep forest greens, like ficus leaves on dark soil. */
+
+.background { fill: #1a2e22; }
+
+.layer-landuse :where(polygon, path) { fill: #1f3329; stroke: none; }
+.landuse-forest      { fill: #3a5c3e; }
+.landuse-grass       { fill: #2c4a32; }
+.landuse-residential { fill: #243a2a; }
+.landuse-industrial  { fill: #1f3329; }
+.landuse-commercial  { fill: #213628; }
+
+.layer-leisure :where(polygon, path) { fill: #2c4a32; stroke: none; }
+.leisure-park    { fill: #3a5c3e; }
+.leisure-garden  { fill: #45684a; }
+.leisure-pitch   { fill: #4a7050; }
+
+.layer-water :where(polygon, path), .water { fill: #112826; stroke: #4a8a7c; stroke-width: 1; }
+.layer-waterway polyline, .layer-waterway path { fill: none; stroke: #4a8a7c; stroke-width: 2.2; }
+.coastline { fill: none; stroke: #6abaa0; stroke-width: 3; }
+
+.layer-building :where(polygon, path) { fill: #1a261e; stroke: #2a3a2e; stroke-width: 0.4; }
+
+.layer-rail polyline, .layer-rail path {
+  fill: none; stroke: #6a7868; stroke-width: 1.6;
+  stroke-dasharray: 5 5;
+}
+
+.layer-road-casings polyline, .layer-road-casings path { stroke: none; }
+
+.layer-road polyline, .layer-road path {
+  fill: none;
+  stroke: #b8d4b0;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.92;
+}
+.road-path        { stroke: #5a7858; stroke-width: 1.0; stroke-dasharray: 2 2; opacity: 0.6; }
+.road-service     { stroke: #687c60; stroke-width: 1.2; }
+.road-residential { stroke: #9ab098; stroke-width: 2.2; }
+.road-tertiary    { stroke: #b8d4b0; stroke-width: 3.2; }
+.road-secondary   { stroke: #c8e0c0; stroke-width: 4.2; }
+.road-primary     { stroke: #e0f4d8; stroke-width: 5.2; }
+.road-trunk       { stroke: #f0f8e8; stroke-width: 6.0; }
+.road-motorway    { stroke: #ffffff; stroke-width: 6.8; }
+.road-other       { stroke: #7a8a78; stroke-width: 1.6; }
+
+.layer-road-labels text {
+  font-family: Georgia, "Times New Roman", serif;
+  fill: #c8e0c0;
+  paint-order: stroke;
+  stroke: #1a2e22;
+  stroke-width: 2.2;
+  letter-spacing: 0.06em;
+  font-style: italic;
+}
+
+.layer-places text {
+  font-family: Georgia, "Times New Roman", serif;
+  fill: #e0f4d8;
+  paint-order: stroke;
+  stroke: #1a2e22;
+  stroke-width: 2.6;
+}
+.place-city { font-weight: 700; letter-spacing: 0.20em; text-transform: uppercase; }
+.place-town { font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+.place-village { font-weight: 500; font-style: italic; }
+.place-suburb { font-style: italic; fill: #a8c0a0; }
