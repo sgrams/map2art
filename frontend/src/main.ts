@@ -1581,11 +1581,9 @@ type Poi = {
   /** Text color used wherever the marker renders text (label text on
    *  pin/dot/flag, the text inside a bubble, the number in a numbered marker). */
   textColor: string;
-  /** Marker scale relative to min(canvasW, canvasH). */
-  sizeFrac: number;
-  /** Multiplier applied to the marker geometry only — lets you grow/shrink
-   *  the icon without changing the label size. Default 1. */
-  markerScale: number;
+  /** Absolute marker size in SVG units (≈ mm on standard canvas). The
+   *  marker icon scales independently from the label font size. */
+  markerSize: number;
   /** Absolute label font size in SVG units (≈ mm at typical canvases). The
    *  label is decoupled from the icon: marker size scales independently. */
   fontSizePx: number;
@@ -1622,7 +1620,11 @@ const HISTORY_LIMIT = 80;
 const cloneSnap = (): HistorySnap => ({
   overlays: overlays.map((o) => ({ ...o })),
   pois: pois.map((p) => ({ ...p })),
-  routes: routes.map((r) => ({ ...r, poiIds: r.poiIds.slice() })),
+  routes: routes.map((r) => ({
+    ...r,
+    poiIds: r.poiIds.slice(),
+    controlPoints: (r.controlPoints ?? []).map((c) => ({ ...c })),
+  })),
 });
 
 const restoreSnap = (snap: HistorySnap) => {
@@ -1631,7 +1633,13 @@ const restoreSnap = (snap: HistorySnap) => {
   pois.length = 0;
   for (const p of snap.pois) pois.push({ ...p });
   routes.length = 0;
-  for (const r of snap.routes) routes.push({ ...r, poiIds: r.poiIds.slice() });
+  for (const r of snap.routes) {
+    routes.push({
+      ...r,
+      poiIds: r.poiIds.slice(),
+      controlPoints: (r.controlPoints ?? []).map((c) => ({ ...c })),
+    });
+  }
   selectedIds.clear();
   renderOverlayList();
   renderPoiList();
@@ -1701,8 +1709,7 @@ const addPoi = (atLat?: number, atLng?: number) => {
     style: "pin",
     color: "#e25c5c",
     textColor: "#1a1a1a",
-    sizeFrac: 0.04,
-    markerScale: 1,
+    markerSize: 8,
     fontSizePx: 4,
     textBg: false,
     textBgColor: "#ffffff",
@@ -1782,13 +1789,13 @@ const renderPoiList = () => {
 
     const size = document.createElement("input");
     size.type = "number";
-    size.step = "0.005";
-    size.min = "0.005";
-    size.value = p.sizeFrac.toFixed(3);
-    size.title = "Marker size (fraction of canvas short edge)";
+    size.step = "0.5";
+    size.min = "0.5";
+    size.value = String(p.markerSize);
+    size.title = "Marker size (SVG units; ≈ mm at standard canvas)";
     size.addEventListener("input", () => {
       const v = parseFloat(size.value);
-      if (Number.isFinite(v) && v > 0) { p.sizeFrac = v; recompose(); }
+      if (Number.isFinite(v) && v > 0) { p.markerSize = v; recompose(); }
     });
 
     const del = document.createElement("button");
@@ -1800,7 +1807,16 @@ const renderPoiList = () => {
       snapshot();
       const i = pois.findIndex((x) => x.id === p.id);
       if (i >= 0) pois.splice(i, 1);
+      // Drop the deleted POI from every route and resync segment controls so
+      // controlPoints[i] keeps pointing at the same segment afterwards.
+      for (const r of routes) {
+        if (r.poiIds.includes(p.id)) {
+          r.poiIds = r.poiIds.filter((id) => id !== p.id);
+          syncRouteControlPoints(r);
+        }
+      }
       renderPoiList();
+      renderRouteList();
       recompose();
     });
 
@@ -1809,22 +1825,6 @@ const renderPoiList = () => {
     const extras = document.createElement("div");
     extras.className = "poi-extras";
 
-    const markerScale = document.createElement("input");
-    markerScale.type = "number";
-    markerScale.step = "0.1";
-    markerScale.min = "0.1";
-    markerScale.value = String(p.markerScale);
-    markerScale.title = "Marker scale (multiplier on icon size)";
-    const markerScaleLbl = document.createElement("label");
-    markerScaleLbl.append("Marker ×", markerScale);
-    markerScaleLbl.addEventListener("input", () => {
-      const v = parseFloat(markerScale.value);
-      if (Number.isFinite(v) && v > 0) {
-        p.markerScale = v;
-        recompose();
-      }
-    });
-
     const fontSize = document.createElement("input");
     fontSize.type = "number";
     fontSize.step = "0.5";
@@ -1832,7 +1832,7 @@ const renderPoiList = () => {
     fontSize.value = String(p.fontSizePx);
     fontSize.title = "Label font size (SVG units; ≈ mm at standard canvas)";
     const fontSizeLbl = document.createElement("label");
-    fontSizeLbl.append("Text px", fontSize);
+    fontSizeLbl.append("Text size", fontSize);
     fontSizeLbl.addEventListener("input", () => {
       const v = parseFloat(fontSize.value);
       if (Number.isFinite(v) && v > 0) {
@@ -1876,7 +1876,7 @@ const renderPoiList = () => {
       recompose();
     });
 
-    extras.append(markerScaleLbl, fontSizeLbl, posLbl, bgCheckRow, bgColor);
+    extras.append(fontSizeLbl, posLbl, bgCheckRow, bgColor);
     li.append(text, controls, extras);
     poiListEl.appendChild(li);
   }
@@ -1890,6 +1890,8 @@ addPoiBtn.addEventListener("click", () => addPoi());
 
 type RouteStyle = "solid" | "dashed" | "dotted" | "arrow";
 
+type RouteCurveCtrl = { lat: number; lng: number };
+
 type Route = {
   id: string;
   name: string;
@@ -1898,6 +1900,39 @@ type Route = {
   widthMm: number;
   /** Ordered list of POI ids the line passes through. */
   poiIds: string[];
+  /** When true, each consecutive POI pair is connected by a quadratic Bezier
+   *  whose control point lives in `controlPoints`. The control defaults to the
+   *  segment's midpoint — so an un-touched curved route renders identically to
+   *  the straight one until the user drags a handle. */
+  curved: boolean;
+  /** One control point per segment (length = max(0, poiIds.length - 1)).
+   *  Stored as lat/lng so handles pan/zoom with the underlying map. */
+  controlPoints: RouteCurveCtrl[];
+};
+
+/** Midpoint of two POIs in lat/lng space — the default control position for a
+ *  curve segment (renders as a straight line). */
+const segmentMidLatLng = (a: Poi, b: Poi): RouteCurveCtrl => ({
+  lat: (a.lat + b.lat) / 2,
+  lng: (a.lng + b.lng) / 2,
+});
+
+/** Resize `r.controlPoints` to match `poiIds.length - 1`. Existing entries are
+ *  preserved by index; new entries are seeded to the segment midpoint. */
+const syncRouteControlPoints = (r: Route) => {
+  const segCount = Math.max(0, r.poiIds.length - 1);
+  const old = r.controlPoints ?? [];
+  const next: RouteCurveCtrl[] = [];
+  for (let i = 0; i < segCount; i++) {
+    if (old[i]) {
+      next.push({ lat: old[i].lat, lng: old[i].lng });
+      continue;
+    }
+    const a = pois.find((p) => p.id === r.poiIds[i]);
+    const b = pois.find((p) => p.id === r.poiIds[i + 1]);
+    next.push(a && b ? segmentMidLatLng(a, b) : { lat: 0, lng: 0 });
+  }
+  r.controlPoints = next;
 };
 
 const routes: Route[] = [];
@@ -1912,6 +1947,8 @@ const addRoute = () => {
     style: "solid",
     widthMm: 0.8,
     poiIds: [],
+    curved: false,
+    controlPoints: [],
   });
   renderRouteList();
   recompose();
@@ -1951,6 +1988,7 @@ const renderRouteList = () => {
       r.poiIds = nums
         .map((n) => pois[n - 1]?.id)
         .filter((id): id is string => !!id);
+      syncRouteControlPoints(r);
       recompose();
     });
 
@@ -1991,8 +2029,30 @@ const renderRouteList = () => {
       }
     });
 
-    // Empty spacer so the grid lays out cleanly.
-    const spacer = document.createElement("span");
+    const curveCheck = document.createElement("input");
+    curveCheck.type = "checkbox";
+    curveCheck.checked = r.curved;
+    curveCheck.title = "Smooth curve — drag the handles to shape it";
+    const curveLbl = document.createElement("label");
+    curveLbl.className = "check-row";
+    curveLbl.append(curveCheck, "curve");
+    curveCheck.addEventListener("change", () => {
+      r.curved = curveCheck.checked;
+      if (r.curved) syncRouteControlPoints(r);
+      recompose();
+    });
+
+    const resetCurve = document.createElement("button");
+    resetCurve.type = "button";
+    resetCurve.className = "route-reset-curve";
+    resetCurve.textContent = "⤺";
+    resetCurve.title = "Reset curve handles to straight";
+    resetCurve.addEventListener("click", () => {
+      snapshot();
+      r.controlPoints = [];
+      syncRouteControlPoints(r);
+      recompose();
+    });
 
     const del = document.createElement("button");
     del.type = "button";
@@ -2007,7 +2067,7 @@ const renderRouteList = () => {
       recompose();
     });
 
-    controls.append(style, color, width, spacer, del);
+    controls.append(style, color, width, curveLbl, resetCurve, del);
     li.append(name, seq, controls);
     routeListEl.appendChild(li);
   }
@@ -2033,23 +2093,70 @@ const projectPoiToCanvas = (
   return { x: mx + u * mw, y: my + v * mh };
 };
 
+/** Project a lat/lng to canvas coordinates without rejecting points outside
+ *  the bbox — useful for curve control handles, which the user may drag past
+ *  the visible map area. */
+const projectLatLngToCanvasRaw = (
+  lng: number, lat: number,
+  mx: number, my: number, mw: number, mh: number,
+): { x: number; y: number } | null => {
+  const b = norm();
+  const minB = mercatorXY(b.west, b.south);
+  const maxB = mercatorXY(b.east, b.north);
+  const dx = maxB.x - minB.x;
+  const dy = maxB.y - minB.y;
+  if (!(dx > 0) || !(dy > 0)) return null;
+  const m = mercatorXY(lng, lat);
+  const u = (m.x - minB.x) / dx;
+  const v = (maxB.y - m.y) / dy;
+  return { x: mx + u * mw, y: my + v * mh };
+};
+
+/** Build a per-segment quadratic-Bezier path string. Each segment from pts[i]
+ *  to pts[i+1] uses ctrls[i] as its off-curve control. When the control sits
+ *  at the segment midpoint the segment is straight. */
+const buildCurvedPathD = (
+  pts: { x: number; y: number }[],
+  ctrls: { x: number; y: number }[],
+): string => {
+  if (pts.length < 2) return "";
+  let d = `M${pts[0].x.toFixed(2)},${pts[0].y.toFixed(2)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const c = ctrls[i] ?? {
+      x: (pts[i].x + pts[i + 1].x) / 2,
+      y: (pts[i].y + pts[i + 1].y) / 2,
+    };
+    d +=
+      ` Q${c.x.toFixed(2)},${c.y.toFixed(2)} ` +
+      `${pts[i + 1].x.toFixed(2)},${pts[i + 1].y.toFixed(2)}`;
+  }
+  return d;
+};
+
 const renderRoutes = (
   mx: number, my: number, mw: number, mh: number,
+  forExport = false,
 ): { defs: string; body: string } => {
   if (routes.length === 0) return { defs: "", body: "" };
   let defs = "";
   let body = "";
   for (const r of routes) {
     if (r.poiIds.length < 2) continue;
-    const pts: { x: number; y: number }[] = [];
-    for (const id of r.poiIds) {
-      const poi = pois.find((p) => p.id === id);
+    if (!r.controlPoints || r.controlPoints.length !== r.poiIds.length - 1) {
+      syncRouteControlPoints(r);
+    }
+
+    // Resolve the projected POI positions in poiIds order, remembering each
+    // point's original POI index so we can look up the matching control point.
+    const segPts: { x: number; y: number; fromIdx: number }[] = [];
+    for (let i = 0; i < r.poiIds.length; i++) {
+      const poi = pois.find((p) => p.id === r.poiIds[i]);
       if (!poi) continue;
       const p = projectPoiToCanvas(poi, mx, my, mw, mh);
-      if (p) pts.push(p);
+      if (p) segPts.push({ x: p.x, y: p.y, fromIdx: i });
     }
-    if (pts.length < 2) continue;
-    const pointsStr = pts.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+    if (segPts.length < 2) continue;
+
     const sw = Math.max(0.15, r.widthMm).toFixed(2);
     let dashAttr = "";
     let markerAttr = "";
@@ -2069,10 +2176,53 @@ const renderRoutes = (
           `<path d="M0,0 L10,5 L0,10 Z" fill="${r.color}"/></marker>`;
         break;
     }
-    body +=
-      `    <polyline class="route route-${r.style}" data-id="${r.id}" points="${pointsStr}" ` +
+    const common =
       `fill="none" stroke="${r.color}" stroke-width="${sw}" ` +
-      `stroke-linecap="round" stroke-linejoin="round"${dashAttr}${markerAttr}/>\n`;
+      `stroke-linecap="round" stroke-linejoin="round"${dashAttr}${markerAttr}`;
+
+    if (r.curved) {
+      // Project each segment's control point to canvas; fall back to the
+      // segment midpoint when the control hasn't been synced yet.
+      const pts = segPts.map((p) => ({ x: p.x, y: p.y }));
+      const ctrls: { x: number; y: number }[] = [];
+      const handles: { x: number; y: number; segIdx: number }[] = [];
+      for (let i = 0; i < segPts.length - 1; i++) {
+        const a = segPts[i];
+        const b = segPts[i + 1];
+        const segIdx = a.fromIdx;
+        const cp = r.controlPoints[segIdx];
+        let cx = (a.x + b.x) / 2;
+        let cy = (a.y + b.y) / 2;
+        if (cp) {
+          const proj = projectLatLngToCanvasRaw(cp.lng, cp.lat, mx, my, mw, mh);
+          if (proj) { cx = proj.x; cy = proj.y; }
+        }
+        ctrls.push({ x: cx, y: cy });
+        handles.push({ x: cx, y: cy, segIdx });
+      }
+      const d = buildCurvedPathD(pts, ctrls);
+      body +=
+        `    <path class="route route-${r.style} route-curved" data-id="${r.id}" d="${d}" ${common}/>\n`;
+      if (!forExport) {
+        const handleR = Math.max(0.9, r.widthMm * 1.8);
+        const handleStroke = Math.max(0.18, r.widthMm * 0.45).toFixed(2);
+        for (const h of handles) {
+          body +=
+            `    <circle class="route-curve-handle" data-route-id="${r.id}" ` +
+            `data-seg-idx="${h.segIdx}" ` +
+            `cx="${h.x.toFixed(2)}" cy="${h.y.toFixed(2)}" ` +
+            `r="${handleR.toFixed(2)}" fill="#4ea4ff" fill-opacity="0.85" ` +
+            `stroke="#ffffff" stroke-width="${handleStroke}" ` +
+            `style="cursor:move"/>\n`;
+        }
+      }
+    } else {
+      const pointsStr = segPts
+        .map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`)
+        .join(" ");
+      body +=
+        `    <polyline class="route route-${r.style}" data-id="${r.id}" points="${pointsStr}" ${common}/>\n`;
+    }
   }
   if (body) body = `  <g class="layer-routes">\n${body}  </g>\n`;
   return { defs, body };
@@ -2233,7 +2383,7 @@ const renderPoiLabel = (
 };
 
 const renderPoiPin = (poi: Poi, x: number, y: number, s: number): string => {
-  const m = s * poi.markerScale;
+  const m = s;
   const fontSize = s * 0.42;
   const bounds = {
     top: y - m * 1.5,
@@ -2251,7 +2401,7 @@ const renderPoiPin = (poi: Poi, x: number, y: number, s: number): string => {
 };
 
 const renderPoiDot = (poi: Poi, x: number, y: number, s: number): string => {
-  const r = s * 0.20 * poi.markerScale;
+  const r = s * 0.20;
   const fontSize = s * 0.36;
   const bounds = { top: y - r, bottom: y + r, left: x - r, right: x + r };
   return (
@@ -2263,7 +2413,7 @@ const renderPoiDot = (poi: Poi, x: number, y: number, s: number): string => {
 };
 
 const renderPoiBubble = (poi: Poi, x: number, y: number, s: number): string => {
-  const ms = s * poi.markerScale;
+  const ms = s;
   const fontSize = s * 0.4;
   const padX = ms * 0.28;
   const padY = ms * 0.22;
@@ -2305,7 +2455,7 @@ const renderPoiNumbered = (
   s: number,
   index: number,
 ): string => {
-  const r = s * 0.42 * poi.markerScale;
+  const r = s * 0.42;
   const numberSize = r * 1.1; // number sized to fit inside the scaled circle
   const labelSize = s * 0.32;
   const bounds = { top: y - r, bottom: y + r, left: x - r, right: x + r };
@@ -2319,7 +2469,7 @@ const renderPoiNumbered = (
 };
 
 const renderPoiFlag = (poi: Poi, x: number, y: number, s: number): string => {
-  const ms = s * poi.markerScale;
+  const ms = s;
   const poleH = ms * 1.0;
   const flagW = ms * 0.65;
   const flagH = ms * 0.42;
@@ -2837,7 +2987,7 @@ const renderWaterLabels = (
       const fake: Poi = {
         id: "", lat: f.lat, lng: f.lng,
         text: "", style: "pin",
-        color: "", textColor: "", sizeFrac: 0, markerScale: 1,
+        color: "", textColor: "", markerSize: 0,
         fontSizePx: 4, textBg: false, textBgColor: "", textPosition: "bottom",
       };
       const p = projectPoiToCanvas(fake, mx, my, mw, mh);
@@ -2954,6 +3104,16 @@ const composeSvg = (forExport = false): string | null => {
   // Pull water features out so the frontend can render labels client-side
   // (and let users drag them). The extractor also strips the hidden block.
   waterFeatures = extractWaterFeatures(doc);
+  // Hoist the map's <style> blocks (theme CSS) up to the outer SVG so the
+  // rules apply during <img>/createImageBitmap rasterization. Some browsers
+  // don't reliably apply <style> nested inside an inner <svg> when the outer
+  // document is rendered as a raster image, which made the map appear empty
+  // in the exported PNG.
+  let hoistedStyle = "";
+  doc.querySelectorAll("style").forEach((s) => {
+    hoistedStyle += `<style>${s.textContent ?? ""}</style>`;
+    s.remove();
+  });
   const mapInner = mapSvgEl.innerHTML;
 
   const overlaysXml = overlays
@@ -3081,7 +3241,7 @@ const composeSvg = (forExport = false): string | null => {
         const v = (maxBbox.y - m.y) / dyMerc;
         const canvasX = mx + u * mw;
         const canvasY = my + v * mh;
-        const s = Math.max(2, minDim * p.sizeFrac);
+        const s = Math.max(0.5, p.markerSize);
         poiXml += renderPoiMarker(p, canvasX, canvasY, s, i + 1);
       });
     }
@@ -3111,11 +3271,25 @@ const composeSvg = (forExport = false): string | null => {
   // Map content + everything anchored by lat/lng (graticule, cross, POIs,
   // routes) rotates together. Anything anchored to the canvas (border, scale
   // bar, attribution, info strip, overlays) stays axis-aligned.
+  //
+  // Wrap the parsed map content in a <g transform="…"> instead of a nested
+  // <svg viewBox="…">. The two are visually equivalent under xMidYMid-meet,
+  // but Firefox stops cascading CSS with descendant combinators across a
+  // nested-<svg> boundary when rasterizing (e.g. `.layer-road polyline` won't
+  // match inside the inner viewport), so polylines fall back to default
+  // black fill in exported PNGs. Keeping everything in one SVG document tree
+  // makes the theme styles apply uniformly.
+  const vbParts = mapVb.split(/\s+/).map((n) => parseFloat(n));
+  const srcW = Number.isFinite(vbParts[2]) && vbParts[2] > 0 ? vbParts[2] : 1000;
+  const srcH = Number.isFinite(vbParts[3]) && vbParts[3] > 0 ? vbParts[3] : 1000;
+  const vbScale = Math.min(mw / srcW, mh / srcH);
+  const vbTx = mx + (mw - vbScale * srcW) / 2;
+  const vbTy = my + (mh - vbScale * srcH) / 2;
   const mapBlock =
-    `  <svg xmlns="http://www.w3.org/2000/svg" x="${mx}" y="${my}" width="${mw}" height="${mh}" viewBox="${mapVb}" preserveAspectRatio="xMidYMid meet"${mapAttrs}>\n` +
+    `  <g class="map-content" transform="translate(${vbTx.toFixed(3)} ${vbTy.toFixed(3)}) scale(${vbScale.toFixed(6)})"${mapAttrs}>\n` +
     mapInner +
-    `  </svg>\n`;
-  const { defs: routeDefs, body: routeXml } = renderRoutes(mx, my, mw, mh);
+    `  </g>\n`;
+  const { defs: routeDefs, body: routeXml } = renderRoutes(mx, my, mw, mh, forExport);
   if (routeDefs) {
     defs = defs
       ? defs.replace("</defs>", routeDefs + "</defs>")
@@ -3133,6 +3307,7 @@ const composeSvg = (forExport = false): string | null => {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" ` +
     `viewBox="0 0 ${cw} ${ch}" width="${cw}mm" height="${ch}mm">\n` +
+    (hoistedStyle ? `  ${hoistedStyle}\n` : "") +
     (defs ? `  ${defs}\n` : "") +
     `  <rect class="canvas-bg" width="${cw}" height="${ch}" fill="${canvasBg}"/>\n` +
     wrappedLatLng +
@@ -3177,6 +3352,7 @@ const recompose = () => {
   downloadPngBtn.disabled = false;
   bindOverlayDragHandlers();
   bindPoiDragHandlers();
+  bindRouteCurveHandles();
   bindAtlasInfoDrag();
   bindFreeformHandles();
   bindScaleBarDrag();
@@ -3694,6 +3870,133 @@ const bindPoiDragHandlers = () => {
   });
 };
 
+// -- Route curve handles ----------------------------------------------------
+
+/** Drag the per-segment control points of curved routes. The drag updates the
+ *  affected `<path>` and handle live; on release the new position is converted
+ *  to lat/lng and stored in `route.controlPoints[segIdx]`. */
+const bindRouteCurveHandles = () => {
+  const svg = previewEl.querySelector<SVGSVGElement>("svg");
+  if (!svg) return;
+  svg.querySelectorAll<SVGCircleElement>("circle.route-curve-handle").forEach((h) => {
+    const routeId = h.dataset.routeId;
+    const segIdx = parseInt(h.dataset.segIdx ?? "-1", 10);
+    if (!routeId || !(segIdx >= 0)) return;
+    const r = routes.find((x) => x.id === routeId);
+    if (!r || !r.controlPoints[segIdx]) return;
+
+    // Cache state needed for live path updates so we don't recompose mid-drag.
+    let startSvg: { x: number; y: number } | null = null;
+    let startLat = 0;
+    let startLng = 0;
+    let startCx = 0;
+    let startCy = 0;
+    let cachedPts: { x: number; y: number }[] = [];
+    let cachedCtrls: { x: number; y: number }[] = [];
+    let localSegIdx = -1;
+    let pathEl: SVGPathElement | null = null;
+
+    h.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      snapshot();
+      startSvg = toSvgPoint(svg, e.clientX, e.clientY);
+      startLat = r.controlPoints[segIdx].lat;
+      startLng = r.controlPoints[segIdx].lng;
+      startCx = parseFloat(h.getAttribute("cx") ?? "0");
+      startCy = parseFloat(h.getAttribute("cy") ?? "0");
+
+      // Collect every handle for this route — their cx/cy are the current
+      // control-point canvas positions and stay constant during this drag
+      // except for the one being moved.
+      const peerHandles = svg.querySelectorAll<SVGCircleElement>(
+        `circle.route-curve-handle[data-route-id="${routeId}"]`,
+      );
+      cachedCtrls = [];
+      localSegIdx = -1;
+      peerHandles.forEach((peer, idx) => {
+        cachedCtrls.push({
+          x: parseFloat(peer.getAttribute("cx") ?? "0"),
+          y: parseFloat(peer.getAttribute("cy") ?? "0"),
+        });
+        if (peer === h) localSegIdx = idx;
+      });
+
+      // Resolve POI canvas positions for this route from current map placement.
+      const aspect = lastMapAspect ?? 1;
+      const { w: cw, h: ch } = canvasDims(aspect);
+      const { mx, my, mw, mh } = computeMapPlacement(cw, ch, aspect);
+      void cw; void ch;
+      cachedPts = [];
+      for (const id of r.poiIds) {
+        const poi = pois.find((p) => p.id === id);
+        if (!poi) continue;
+        const p = projectPoiToCanvas(poi, mx, my, mw, mh);
+        if (p) cachedPts.push(p);
+      }
+
+      pathEl = svg.querySelector<SVGPathElement>(
+        `path.route-curved[data-id="${routeId}"]`,
+      );
+      try {
+        h.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    });
+
+    h.addEventListener("pointermove", (e) => {
+      if (!startSvg) return;
+      const p = toSvgPoint(svg, e.clientX, e.clientY);
+      const dx = p.x - startSvg.x;
+      const dy = p.y - startSvg.y;
+      const nx = startCx + dx;
+      const ny = startCy + dy;
+      h.setAttribute("cx", nx.toFixed(2));
+      h.setAttribute("cy", ny.toFixed(2));
+      if (pathEl && localSegIdx >= 0) {
+        cachedCtrls[localSegIdx] = { x: nx, y: ny };
+        pathEl.setAttribute("d", buildCurvedPathD(cachedPts, cachedCtrls));
+      }
+    });
+
+    const end = (e: PointerEvent) => {
+      if (!startSvg) return;
+      const p = toSvgPoint(svg, e.clientX, e.clientY);
+      const dx = p.x - startSvg.x;
+      const dy = p.y - startSvg.y;
+      startSvg = null;
+      try {
+        h.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+
+      // Convert the canvas delta back to a lat/lng delta via Mercator —
+      // same math used by the POI drag handler.
+      const aspect = lastMapAspect ?? 1;
+      const { w: cw, h: ch } = canvasDims(aspect);
+      const { mx, my, mw, mh } = computeMapPlacement(cw, ch, aspect);
+      void cw; void ch; void mx; void my;
+      const b = norm();
+      const minB = mercatorXY(b.west, b.south);
+      const maxB = mercatorXY(b.east, b.north);
+      const dxMerc = maxB.x - minB.x;
+      const dyMerc = maxB.y - minB.y;
+      if (mw > 0 && mh > 0 && dxMerc > 0 && dyMerc > 0) {
+        const orig = mercatorXY(startLng, startLat);
+        const newMercX = orig.x + (dx / mw) * dxMerc;
+        const newMercY = orig.y - (dy / mh) * dyMerc;
+        const ll = inverseMercator(newMercX, newMercY);
+        r.controlPoints[segIdx] = { lat: ll.lat, lng: ll.lng };
+      }
+      recompose();
+    };
+    h.addEventListener("pointerup", end);
+    h.addEventListener("pointercancel", end);
+  });
+};
+
 // -- Render / save / download ------------------------------------------------
 
 const render = async () => {
@@ -3715,6 +4018,7 @@ const render = async () => {
   setStatus("rendering…");
   renderBtn.disabled = true;
   downloadBtn.disabled = true;
+  downloadPngBtn.disabled = true;
   previewEl.classList.add("loading");
   try {
     const width = parseFloat(widthInput.value) || 2000;
@@ -3814,6 +4118,18 @@ const download = () => {
   URL.revokeObjectURL(url);
 };
 
+/** Resolve the canvas-bg color, defaulting to a visible cream so the PNG is
+ *  never silently transparent or black. */
+const resolveCanvasBg = (): string => {
+  let bg: string | undefined;
+  if (canvasBgOverrideToggle.checked) bg = canvasBgColorInput.value;
+  else bg = currentFrame().canvasBg ?? themeBackgroundColor(cssEditor.value);
+  if (!bg || bg === "none" || bg === "transparent" || bg === "inherit") {
+    return "#fafafa";
+  }
+  return bg;
+};
+
 const downloadPng = async () => {
   const composed = composeSvg(true);
   if (!composed) return;
@@ -3823,13 +4139,32 @@ const downloadPng = async () => {
   const widthPx = Math.max(1, Math.round((cw * dpi) / 25.4));
   const heightPx = Math.max(1, Math.round((ch * dpi) / 25.4));
 
+  // Force the outer <svg> to have a pixel-sized intrinsic size matching our
+  // target output. Without this, browsers fall back to the SVG's mm-based
+  // intrinsic size (≈ 96/25.4 px per mm), which gets resampled blurrily and,
+  // in some browsers, refuses to rasterize at all when loaded via <img>.
+  const composedForRaster = composed.replace(
+    /<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 [^"]+" width="[^"]+" height="[^"]+">/,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${cw} ${ch}" width="${widthPx}" height="${heightPx}">`,
+  );
+
   setStatus(`rasterizing ${widthPx}×${heightPx}…`);
   downloadPngBtn.disabled = true;
-  const url = URL.createObjectURL(
-    new Blob([composed], { type: "image/svg+xml;charset=utf-8" }),
-  );
+  const blob0 = new Blob([composedForRaster], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob0);
   try {
+    // Prefer createImageBitmap with an explicit resize — it gives the browser
+    // an opportunity to rasterize the SVG at the requested pixel dimensions
+    // directly, sidestepping <img>'s mm-intrinsic-sizing quirks. Falls back
+    // to <img> + drawImage for browsers/contexts where the SVG path isn't
+    // supported by createImageBitmap.
+    // Chromium doesn't decode SVG blobs via createImageBitmap (the
+    // earlier code path that tried to use it always rejects), so use the
+    // <img> path directly. <img> handles SVG reliably given pixel-sized
+    // intrinsic dimensions (which we patched in above).
     const img = new Image();
+    img.width = widthPx;
+    img.height = heightPx;
     img.src = url;
     await img.decode();
 
@@ -3838,14 +4173,16 @@ const downloadPng = async () => {
     canvas.height = heightPx;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("no 2d context");
-    // Paint a solid background first so the PNG is never transparent even if
-    // the SVG's <rect class="canvas-bg"> doesn't rasterize for some reason.
-    const f = currentFrame();
-    ctx.fillStyle = canvasBgOverrideToggle.checked
-      ? canvasBgColorInput.value
-      : (f.canvasBg ?? themeBackgroundColor(cssEditor.value));
-    ctx.fillRect(0, 0, widthPx, heightPx);
     ctx.drawImage(img, 0, 0, widthPx, heightPx);
+
+    // Paint the resolved canvas-bg *behind* whatever the SVG drew. This fills
+    // any transparent pixels left by the rasterizer (including the case where
+    // the SVG's own <rect class="canvas-bg"> never made it into the bitmap)
+    // without disturbing opaque map content.
+    ctx.globalCompositeOperation = "destination-over";
+    ctx.fillStyle = resolveCanvasBg();
+    ctx.fillRect(0, 0, widthPx, heightPx);
+    ctx.globalCompositeOperation = "source-over";
 
     const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
@@ -4058,7 +4395,11 @@ const saveProject = () => {
     frame: currentFrameId,
     overlays: overlays.map((o) => ({ ...o })),
     pois: pois.map((p) => ({ ...p })),
-    routes: routes.map((r) => ({ ...r, poiIds: r.poiIds.slice() })),
+    routes: routes.map((r) => ({
+    ...r,
+    poiIds: r.poiIds.slice(),
+    controlPoints: (r.controlPoints ?? []).map((c) => ({ ...c })),
+  })),
   };
   const blob = new Blob([JSON.stringify(proj, null, 2)], {
     type: "application/json",
@@ -4177,7 +4518,7 @@ const applyProject = (p: SavedProject) => {
     pois.push({
       ...x,
       textColor: x.textColor ?? "#1a1a1a",
-      markerScale: x.markerScale ?? 1,
+      markerSize: x.markerSize ?? 8,
       fontSizePx: x.fontSizePx ?? 4,
       textBg: x.textBg ?? false,
       textBgColor: x.textBgColor ?? "#ffffff",
@@ -4188,7 +4529,18 @@ const applyProject = (p: SavedProject) => {
 
   routes.length = 0;
   for (const r of p.routes ?? []) {
-    routes.push({ ...r, poiIds: (r.poiIds ?? []).slice() });
+    const loaded: Route = {
+      id: r.id,
+      name: r.name,
+      color: r.color,
+      style: r.style,
+      widthMm: r.widthMm,
+      poiIds: (r.poiIds ?? []).slice(),
+      curved: r.curved ?? false,
+      controlPoints: (r.controlPoints ?? []).map((c: RouteCurveCtrl) => ({ ...c })),
+    };
+    syncRouteControlPoints(loaded);
+    routes.push(loaded);
   }
   renderRouteList();
 

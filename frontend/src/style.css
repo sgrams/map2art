@@ -547,7 +547,7 @@ body {
 
 .poi-extras {
   display: grid;
-  grid-template-columns: minmax(4em, 1fr) minmax(4em, 1fr) minmax(5em, 1fr) auto auto;
+  grid-template-columns: minmax(4em, 1fr) minmax(5em, 1fr) auto auto;
   gap: 0.35rem 0.5rem;
   align-items: center;
 }
@@ -605,9 +605,33 @@ body {
 }
 .route-controls {
   display: grid;
-  grid-template-columns: 1fr 2.4em 2.4em 3.6em auto;
+  grid-template-columns: 1fr 2.4em 2.4em auto auto auto;
   gap: 0.35rem;
   align-items: center;
+}
+.route-controls .route-reset-curve {
+  background: #2d3a4a;
+  color: #cfe0ff;
+  border: 1px solid #3a4a60;
+  border-radius: 3px;
+  padding: 0.22rem 0.45rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.route-controls .route-reset-curve:hover { background: #38506e; }
+circle.route-curve-handle {
+  transition: fill-opacity 0.12s ease, r 0.12s ease;
+}
+circle.route-curve-handle:hover {
+  fill-opacity: 1;
+}
+.route-controls .check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  color: #ddd;
 }
 .route-controls select,
 .route-controls input {
