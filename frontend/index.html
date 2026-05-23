@@ -23,8 +23,8 @@
     <main class="grid">
       <section class="pane pane-map">
         <nav class="tabs">
-          <button class="tab active" data-map-tab="picker" type="button">Editor</button>
-          <button class="tab" data-map-tab="preview" type="button">Render</button>
+          <button class="tab active" data-map-tab="picker" type="button">Map editor</button>
+          <button class="tab" data-map-tab="preview" type="button">Map render</button>
         </nav>
         <div class="tab-pane map-pane" data-map-tab="picker">
           <div id="map"></div>
@@ -154,6 +154,14 @@
             </div>
             <ul id="poi-list"></ul>
             <p class="overlays-hint" id="poi-empty">no points of interest yet — click <em>+ Add POI</em> to drop one.</p>
+
+            <h3>Routes between POIs</h3>
+            <div class="poi-toolbar">
+              <button id="add-route-btn" type="button">+ Add route</button>
+              <span class="poi-hint">Enter POI numbers (e.g. <code>1, 2, 3</code>) to draw a line through them.</span>
+            </div>
+            <ul id="route-list"></ul>
+            <p class="overlays-hint" id="route-empty">no routes yet.</p>
           </div>
         </div>
         <div class="tab-pane settings-pane" data-settings-tab="coords" hidden>
@@ -163,6 +171,15 @@
               <li><label class="check-label"><input id="graticule-toggle" type="checkbox" /> Show grid lines</label></li>
               <li><label class="check-label"><input id="graticule-labels-toggle" type="checkbox" checked /> Show edge labels</label></li>
             </ul>
+            <div class="coords-grid">
+              <label>Label color
+                <input id="graticule-color" type="color" value="#555555" />
+              </label>
+              <label>Label background
+                <input id="graticule-halo-color" type="color" value="#fafafa" />
+              </label>
+            </div>
+            <p class="overlays-hint">Defaults are neutral grey on light cream — readable on all themes. Pick lighter text + a dark halo for the Blueprint or Ficus themes.</p>
 
             <h3>Cross at a chosen point</h3>
             <ul class="coords-toggles">
@@ -236,7 +253,11 @@
             </ul>
             <h3>Labels</h3>
             <ul class="layer-toggles">
-              <li><label class="check-label"><input id="labels-toggle" type="checkbox" /> Street &amp; place names</label></li>
+              <li><label class="check-label"><input id="street-labels-toggle" type="checkbox" /> Street names</label></li>
+              <li><label class="check-label"><input id="place-labels-toggle" type="checkbox" /> Place names (cities / towns / villages)</label></li>
+              <li><label class="check-label"><input id="sea-labels-toggle" type="checkbox" /> Sea / ocean names</label></li>
+              <li><label class="check-label"><input id="lake-labels-toggle" type="checkbox" /> Lake names</label></li>
+              <li><label class="check-label"><input id="river-labels-toggle" type="checkbox" /> River / stream names</label></li>
             </ul>
             <p class="overlays-hint">Lat/Lng grid and the cross marker have moved to the <em>Coords</em> tab.</p>
             <p class="overlays-hint">Layer changes apply on the next render. Hide before rendering to save time on big bboxes.</p>
@@ -251,6 +272,23 @@
         </div>
       </section>
     </main>
+    <footer class="app-footer">
+      <span class="app-version">map2art · v0.1.0</span>
+      <a
+        class="footer-link"
+        href="https://github.com/sgrams/map2art"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <svg class="footer-link-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M8 .2C3.6.2 0 3.8 0 8.2c0 3.5 2.3 6.5 5.5 7.6.4.1.5-.2.5-.4v-1.4c-2.2.5-2.7-.9-2.7-.9-.4-.9-.9-1.2-.9-1.2-.7-.5.1-.5.1-.5.8.1 1.2.8 1.2.8.7 1.2 1.9.9 2.4.7.1-.5.3-.9.5-1.1-1.7-.2-3.6-.9-3.6-3.9 0-.9.3-1.6.8-2.1-.1-.2-.4-1 .1-2.1 0 0 .7-.2 2.2.8.6-.2 1.3-.3 2-.3.7 0 1.4.1 2 .3 1.5-1 2.2-.8 2.2-.8.4 1.1.2 1.9.1 2.1.5.5.8 1.2.8 2.1 0 3-1.9 3.7-3.6 3.9.3.2.6.7.6 1.4v2.1c0 .2.1.4.6.4 3.2-1.1 5.5-4.1 5.5-7.6 0-4.4-3.6-8-8-8z"
+          />
+        </svg>
+        sgrams/map2art
+      </a>
+    </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -26,8 +26,14 @@ const dpiInput = $<HTMLInputElement>("dpi");
 const saveProjectBtn = $<HTMLButtonElement>("save-project-btn");
 const loadProjectBtn = $<HTMLButtonElement>("load-project-btn");
 const loadProjectFile = $<HTMLInputElement>("load-project-file");
-const labelsToggle = $<HTMLInputElement>("labels-toggle");
+const streetLabelsToggle = $<HTMLInputElement>("street-labels-toggle");
+const placeLabelsToggle = $<HTMLInputElement>("place-labels-toggle");
+const seaLabelsToggle = $<HTMLInputElement>("sea-labels-toggle");
+const lakeLabelsToggle = $<HTMLInputElement>("lake-labels-toggle");
+const riverLabelsToggle = $<HTMLInputElement>("river-labels-toggle");
 const graticuleToggle = $<HTMLInputElement>("graticule-toggle");
+const graticuleColorInput = $<HTMLInputElement>("graticule-color");
+const graticuleHaloColorInput = $<HTMLInputElement>("graticule-halo-color");
 const paneSplitter = $<HTMLDivElement>("pane-splitter");
 const graticuleLabelsToggle = $<HTMLInputElement>("graticule-labels-toggle");
 const crossToggle = $<HTMLInputElement>("cross-toggle");
@@ -59,6 +65,9 @@ const scalebarYInput = $<HTMLInputElement>("scalebar-y");
 const addPoiBtn = $<HTMLButtonElement>("add-poi-btn");
 const poiListEl = $<HTMLUListElement>("poi-list");
 const poiEmptyEl = $<HTMLParagraphElement>("poi-empty");
+const addRouteBtn = $<HTMLButtonElement>("add-route-btn");
+const routeListEl = $<HTMLUListElement>("route-list");
+const routeEmptyEl = $<HTMLParagraphElement>("route-empty");
 const resetRectBtn = $<HTMLButtonElement>("reset-rect-btn");
 const themeSelect = $<HTMLSelectElement>("theme");
 const paperSelect = $<HTMLSelectElement>("paper");
@@ -185,7 +194,8 @@ const mapPaneEl = document.querySelector<HTMLElement>(".pane-map")!;
 const settingsPaneEl = document.querySelector<HTMLElement>(".pane-settings")!;
 const setPaneSplit = (leftPx: number | null) => {
   if (leftPx === null) {
-    mapPaneEl.style.flex = "1 1 0";
+    // Default split: map gets two thirds, settings gets one third.
+    mapPaneEl.style.flex = "2 1 0";
     settingsPaneEl.style.flex = "1 1 0";
   } else {
     mapPaneEl.style.flex = `0 0 ${leftPx}px`;
@@ -462,11 +472,28 @@ const norm = () => {
   return { south, west, north, east };
 };
 
+const APP_VERSION = "0.1.0";
+
 const updateBboxLabel = () => {
   const b = norm();
   bboxLabel.textContent =
     `S ${b.south.toFixed(5)}, W ${b.west.toFixed(5)}, ` +
     `N ${b.north.toFixed(5)}, E ${b.east.toFixed(5)}`;
+  updatePageTitle();
+};
+
+/** Keep the document title in sync with the rectangle's center coords. */
+const updatePageTitle = () => {
+  const b = norm();
+  if (!Number.isFinite(b.south) || b.north <= b.south) {
+    document.title = `map2art v${APP_VERSION}`;
+    return;
+  }
+  const lat = (b.south + b.north) / 2;
+  const lng = (b.east + b.west) / 2;
+  const latS = `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? "N" : "S"}`;
+  const lngS = `${Math.abs(lng).toFixed(4)}°${lng >= 0 ? "E" : "W"}`;
+  document.title = `map2art v${APP_VERSION} — ${latS}, ${lngS}`;
 };
 
 const drawRect = () => {
@@ -1559,6 +1586,9 @@ type Poi = {
   /** Multiplier applied to the marker geometry only — lets you grow/shrink
    *  the icon without changing the label size. Default 1. */
   markerScale: number;
+  /** Absolute label font size in SVG units (≈ mm at typical canvases). The
+   *  label is decoupled from the icon: marker size scales independently. */
+  fontSizePx: number;
   /** Optional rounded background behind the label (ignored for bubble). */
   textBg: boolean;
   textBgColor: string;
@@ -1584,7 +1614,7 @@ let suggestedTitle: string | null = null;
 
 // -- Undo / redo for overlays + POIs ----------------------------------------
 
-type HistorySnap = { overlays: Overlay[]; pois: Poi[] };
+type HistorySnap = { overlays: Overlay[]; pois: Poi[]; routes: Route[] };
 const undoStack: HistorySnap[] = [];
 const redoStack: HistorySnap[] = [];
 const HISTORY_LIMIT = 80;
@@ -1592,6 +1622,7 @@ const HISTORY_LIMIT = 80;
 const cloneSnap = (): HistorySnap => ({
   overlays: overlays.map((o) => ({ ...o })),
   pois: pois.map((p) => ({ ...p })),
+  routes: routes.map((r) => ({ ...r, poiIds: r.poiIds.slice() })),
 });
 
 const restoreSnap = (snap: HistorySnap) => {
@@ -1599,9 +1630,12 @@ const restoreSnap = (snap: HistorySnap) => {
   for (const o of snap.overlays) overlays.push({ ...o });
   pois.length = 0;
   for (const p of snap.pois) pois.push({ ...p });
+  routes.length = 0;
+  for (const r of snap.routes) routes.push({ ...r, poiIds: r.poiIds.slice() });
   selectedIds.clear();
   renderOverlayList();
   renderPoiList();
+  renderRouteList();
   recompose();
 };
 
@@ -1669,6 +1703,7 @@ const addPoi = (atLat?: number, atLng?: number) => {
     textColor: "#1a1a1a",
     sizeFrac: 0.04,
     markerScale: 1,
+    fontSizePx: 4,
     textBg: false,
     textBgColor: "#ffffff",
     textPosition: "bottom",
@@ -1790,6 +1825,22 @@ const renderPoiList = () => {
       }
     });
 
+    const fontSize = document.createElement("input");
+    fontSize.type = "number";
+    fontSize.step = "0.5";
+    fontSize.min = "1";
+    fontSize.value = String(p.fontSizePx);
+    fontSize.title = "Label font size (SVG units; ≈ mm at standard canvas)";
+    const fontSizeLbl = document.createElement("label");
+    fontSizeLbl.append("Text px", fontSize);
+    fontSizeLbl.addEventListener("input", () => {
+      const v = parseFloat(fontSize.value);
+      if (Number.isFinite(v) && v > 0) {
+        p.fontSizePx = v;
+        recompose();
+      }
+    });
+
     const posSel = document.createElement("select");
     for (const pos of ["top", "bottom", "left", "right"] as const) {
       const opt = new Option(pos, pos);
@@ -1825,7 +1876,7 @@ const renderPoiList = () => {
       recompose();
     });
 
-    extras.append(markerScaleLbl, posLbl, bgCheckRow, bgColor);
+    extras.append(markerScaleLbl, fontSizeLbl, posLbl, bgCheckRow, bgColor);
     li.append(text, controls, extras);
     poiListEl.appendChild(li);
   }
@@ -1834,6 +1885,198 @@ const renderPoiList = () => {
 };
 
 addPoiBtn.addEventListener("click", () => addPoi());
+
+// -- Routes connecting POIs -------------------------------------------------
+
+type RouteStyle = "solid" | "dashed" | "dotted" | "arrow";
+
+type Route = {
+  id: string;
+  name: string;
+  color: string;
+  style: RouteStyle;
+  widthMm: number;
+  /** Ordered list of POI ids the line passes through. */
+  poiIds: string[];
+};
+
+const routes: Route[] = [];
+const newRouteId = () => "rt" + Math.random().toString(36).slice(2, 10);
+
+const addRoute = () => {
+  snapshot();
+  routes.push({
+    id: newRouteId(),
+    name: `Route ${routes.length + 1}`,
+    color: "#4ea4ff",
+    style: "solid",
+    widthMm: 0.8,
+    poiIds: [],
+  });
+  renderRouteList();
+  recompose();
+};
+addRouteBtn.addEventListener("click", addRoute);
+
+const renderRouteList = () => {
+  routeListEl.innerHTML = "";
+  for (const r of routes) {
+    const li = document.createElement("li");
+    li.className = "route-row";
+    li.dataset.id = r.id;
+
+    const name = document.createElement("input");
+    name.type = "text";
+    name.value = r.name;
+    name.placeholder = "route name";
+    name.addEventListener("input", () => {
+      r.name = name.value;
+    });
+
+    const seq = document.createElement("input");
+    seq.type = "text";
+    seq.placeholder = "POI numbers (e.g. 1, 3, 5)";
+    seq.value = r.poiIds
+      .map((id) => {
+        const idx = pois.findIndex((p) => p.id === id);
+        return idx >= 0 ? String(idx + 1) : "";
+      })
+      .filter((s) => s)
+      .join(", ");
+    seq.addEventListener("input", () => {
+      const nums = seq.value
+        .split(/[,\s]+/)
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      r.poiIds = nums
+        .map((n) => pois[n - 1]?.id)
+        .filter((id): id is string => !!id);
+      recompose();
+    });
+
+    const controls = document.createElement("div");
+    controls.className = "route-controls";
+
+    const style = document.createElement("select");
+    for (const s of ["solid", "dashed", "dotted", "arrow"] as const) {
+      style.appendChild(new Option(s, s));
+    }
+    style.value = r.style;
+    style.title = "Line style";
+    style.addEventListener("change", () => {
+      r.style = style.value as RouteStyle;
+      recompose();
+    });
+
+    const color = document.createElement("input");
+    color.type = "color";
+    color.value = r.color;
+    color.title = "Line color";
+    color.addEventListener("input", () => {
+      r.color = color.value;
+      recompose();
+    });
+
+    const width = document.createElement("input");
+    width.type = "number";
+    width.step = "0.1";
+    width.min = "0.1";
+    width.value = String(r.widthMm);
+    width.title = "Width (mm)";
+    width.addEventListener("input", () => {
+      const v = parseFloat(width.value);
+      if (Number.isFinite(v) && v > 0) {
+        r.widthMm = v;
+        recompose();
+      }
+    });
+
+    // Empty spacer so the grid lays out cleanly.
+    const spacer = document.createElement("span");
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "delete-btn";
+    del.textContent = "✕";
+    del.title = "Delete route";
+    del.addEventListener("click", () => {
+      snapshot();
+      const i = routes.findIndex((x) => x.id === r.id);
+      if (i >= 0) routes.splice(i, 1);
+      renderRouteList();
+      recompose();
+    });
+
+    controls.append(style, color, width, spacer, del);
+    li.append(name, seq, controls);
+    routeListEl.appendChild(li);
+  }
+  routeEmptyEl.hidden = routes.length > 0;
+};
+
+const projectPoiToCanvas = (
+  poi: Poi,
+  mx: number, my: number, mw: number, mh: number,
+): { x: number; y: number } | null => {
+  const b = norm();
+  if (poi.lat < b.south || poi.lat > b.north || poi.lng < b.west || poi.lng > b.east) {
+    return null;
+  }
+  const minB = mercatorXY(b.west, b.south);
+  const maxB = mercatorXY(b.east, b.north);
+  const dx = maxB.x - minB.x;
+  const dy = maxB.y - minB.y;
+  if (!(dx > 0) || !(dy > 0)) return null;
+  const m = mercatorXY(poi.lng, poi.lat);
+  const u = (m.x - minB.x) / dx;
+  const v = (maxB.y - m.y) / dy;
+  return { x: mx + u * mw, y: my + v * mh };
+};
+
+const renderRoutes = (
+  mx: number, my: number, mw: number, mh: number,
+): { defs: string; body: string } => {
+  if (routes.length === 0) return { defs: "", body: "" };
+  let defs = "";
+  let body = "";
+  for (const r of routes) {
+    if (r.poiIds.length < 2) continue;
+    const pts: { x: number; y: number }[] = [];
+    for (const id of r.poiIds) {
+      const poi = pois.find((p) => p.id === id);
+      if (!poi) continue;
+      const p = projectPoiToCanvas(poi, mx, my, mw, mh);
+      if (p) pts.push(p);
+    }
+    if (pts.length < 2) continue;
+    const pointsStr = pts.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+    const sw = Math.max(0.15, r.widthMm).toFixed(2);
+    let dashAttr = "";
+    let markerAttr = "";
+    switch (r.style) {
+      case "dashed":
+        dashAttr = ` stroke-dasharray="${(r.widthMm * 4).toFixed(2)} ${(r.widthMm * 2).toFixed(2)}"`;
+        break;
+      case "dotted":
+        dashAttr = ` stroke-dasharray="${(r.widthMm * 0.5).toFixed(2)} ${(r.widthMm * 1.8).toFixed(2)}"`;
+        break;
+      case "arrow":
+        markerAttr = ` marker-end="url(#arrow-${r.id})"`;
+        defs +=
+          `<marker id="arrow-${r.id}" viewBox="0 0 10 10" ` +
+          `refX="9" refY="5" markerWidth="${(r.widthMm * 5).toFixed(2)}" ` +
+          `markerHeight="${(r.widthMm * 5).toFixed(2)}" orient="auto-start-reverse">` +
+          `<path d="M0,0 L10,5 L0,10 Z" fill="${r.color}"/></marker>`;
+        break;
+    }
+    body +=
+      `    <polyline class="route route-${r.style}" data-id="${r.id}" points="${pointsStr}" ` +
+      `fill="none" stroke="${r.color}" stroke-width="${sw}" ` +
+      `stroke-linecap="round" stroke-linejoin="round"${dashAttr}${markerAttr}/>\n`;
+  }
+  if (body) body = `  <g class="layer-routes">\n${body}  </g>\n`;
+  return { defs, body };
+};
 
 // -- POI markers on the editor map ------------------------------------------
 
@@ -1909,12 +2152,15 @@ const inverseMercator = (x: number, y: number) => {
 const renderPoiLabel = (
   poi: Poi,
   bounds: { top: number; bottom: number; left: number; right: number },
-  fontSize: number,
+  _baseFontSize: number,
   weight: number | string = 500,
   halo: boolean = true,
 ): string => {
   if (!poi.text) return "";
+  // Font size is the absolute user value — independent of marker scale.
+  const fontSize = poi.fontSizePx > 0 ? poi.fontSizePx : 4;
   const pad = fontSize * 0.32;
+  void _baseFontSize;
   let x: number;
   let y: number;
   let anchor: "start" | "middle" | "end";
@@ -2077,19 +2323,20 @@ const renderPoiFlag = (poi: Poi, x: number, y: number, s: number): string => {
   const poleH = ms * 1.0;
   const flagW = ms * 0.65;
   const flagH = ms * 0.42;
-  const fontSize = s * 0.36;
   const top = y - poleH;
+  // Label sits below the pole base, centered on x (same convention as Pin),
+  // not under the flag's visible right-side rectangle.
   const bounds = {
     top,
     bottom: y,
-    left: x,
-    right: x + flagW,
+    left: x - ms * 0.5,
+    right: x + ms * 0.5,
   };
   return (
     `  <g class="poi poi-flag" data-id="${poi.id}" style="cursor:move">\n` +
     `    <line x1="${x.toFixed(2)}" y1="${y.toFixed(2)}" x2="${x.toFixed(2)}" y2="${top.toFixed(2)}" stroke="#111" stroke-width="${(ms * 0.06).toFixed(3)}" stroke-linecap="round"/>\n` +
     `    <path d="M ${x.toFixed(2)},${top.toFixed(2)} L ${(x + flagW).toFixed(2)},${(top + flagH * 0.25).toFixed(2)} L ${x.toFixed(2)},${(top + flagH).toFixed(2)} Z" fill="${poi.color}" stroke="#111" stroke-width="${(ms * 0.04).toFixed(3)}" stroke-linejoin="round"/>\n` +
-    renderPoiLabel(poi, bounds, fontSize, 500) +
+    renderPoiLabel(poi, bounds, 0, 600) +
     `  </g>\n`
   );
 };
@@ -2134,6 +2381,8 @@ const renderGraticule = (
   mx: number, my: number, mw: number, mh: number,
   minDim: number,
   showLabels: boolean,
+  labelColor: string,
+  haloColor: string,
 ): string => {
   const minBbox = mercatorXY(b.west, b.south);
   const maxBbox = mercatorXY(b.east, b.north);
@@ -2143,7 +2392,7 @@ const renderGraticule = (
 
   const latStep = niceInterval(b.north - b.south);
   const lngStep = niceInterval(b.east - b.west);
-  const lineColor = "#5a6470";
+  const lineColor = labelColor;
   const lineOpacity = "0.35";
   const lineW = Math.max(0.15, minDim * 0.0008).toFixed(2);
   const fs = minDim * 0.014;
@@ -2166,7 +2415,7 @@ const renderGraticule = (
       labels +=
         `    <text x="${(mx + fs * 0.45).toFixed(2)}" y="${(y - fs * 0.3).toFixed(2)}" ` +
         `font-size="${fs.toFixed(2)}" font-family="ui-monospace, 'Courier New', monospace" ` +
-        `fill="${lineColor}" paint-order="stroke" stroke="#fafafa" ` +
+        `fill="${lineColor}" paint-order="stroke" stroke="${haloColor}" ` +
         `stroke-width="${halo}" letter-spacing="0.04em">${fmtCoord(lat, latStep, "N", "S")}</text>\n`;
     }
   }
@@ -2185,7 +2434,7 @@ const renderGraticule = (
       labels +=
         `    <text x="${(x + fs * 0.35).toFixed(2)}" y="${(my + mh - fs * 0.5).toFixed(2)}" ` +
         `font-size="${fs.toFixed(2)}" font-family="ui-monospace, 'Courier New', monospace" ` +
-        `fill="${lineColor}" paint-order="stroke" stroke="#fafafa" ` +
+        `fill="${lineColor}" paint-order="stroke" stroke="${haloColor}" ` +
         `stroke-width="${halo}" letter-spacing="0.04em">${fmtCoord(lng, lngStep, "E", "W")}</text>\n`;
     }
   }
@@ -2403,6 +2652,7 @@ for (const el of [
   crossMarkerStyleSelect, crossMarkerSizeInput,
   crossLatOffsetInput, crossLngOffsetInput,
   graticuleLabelsToggle, crossLabelsToggle,
+  graticuleColorInput, graticuleHaloColorInput,
   scalebarToggle, scalebarAutoToggle, scalebarLengthInput,
   scalebarSegmentsInput, scalebarXInput, scalebarYInput,
 ] as const) {
@@ -2485,11 +2735,15 @@ const renderScaleBar = (
   labels += drawLabel(lengthM, startX + barW, "end");
 
   return (
-    `  <g class="scalebar" style="pointer-events:none">\n${body}${labels}  </g>\n`
+    `  <g class="scalebar" style="cursor:move">\n${body}${labels}  </g>\n`
   );
 };
 
 // -- OSM attribution ---------------------------------------------------------
+
+/** Absolute attribution position (canvas mm). null = derive from corner. */
+let attribAbsX: number | null = null;
+let attribAbsY: number | null = null;
 
 const renderAttribution = (
   cw: number,
@@ -2510,16 +2764,96 @@ const renderAttribution = (
     case "br":
     default:   x = cw - pad;  y = ch - pad;    anchor = "end";   break;
   }
+  if (attribAbsX !== null && attribAbsY !== null) {
+    x = attribAbsX;
+    y = attribAbsY;
+    anchor = "start"; // freely placed — left-anchor for predictable drag
+  }
   return (
     `  <text class="attribution" x="${x.toFixed(2)}" y="${y.toFixed(2)}" ` +
     `font-size="${fs.toFixed(2)}" font-family="Helvetica, Arial, sans-serif" ` +
     `fill="#555" text-anchor="${anchor}" ` +
     `paint-order="stroke" stroke="#ffffff" stroke-width="${halo}" ` +
-    `style="pointer-events:none">Map data from OpenStreetMap</text>\n`
+    `style="cursor:move">Map data from OpenStreetMap</text>\n`
   );
 };
 
-attribCornerSelect.addEventListener("change", () => recompose());
+attribCornerSelect.addEventListener("change", () => {
+  // Re-pick a corner clears any free-drag override.
+  attribAbsX = null;
+  attribAbsY = null;
+  recompose();
+});
+
+// -- Water labels (client-side rendering + drag) ----------------------------
+
+type WaterKind = "sea" | "lake" | "river";
+type WaterFeature = { name: string; kind: WaterKind; lat: number; lng: number };
+
+/** Parsed once per render from the hidden data block emitted by the backend. */
+let waterFeatures: WaterFeature[] = [];
+
+/** Per-name canvas-mm position overrides for dragged labels. */
+const waterOverrides = new Map<string, { x: number; y: number }>();
+
+const extractWaterFeatures = (doc: Document): WaterFeature[] => {
+  const features: WaterFeature[] = [];
+  doc.querySelectorAll<SVGElement>(".water-feature").forEach((el) => {
+    const name = el.getAttribute("data-name") ?? "";
+    const kind = el.getAttribute("data-kind") as WaterKind | null;
+    const lat = parseFloat(el.getAttribute("data-lat") ?? "");
+    const lng = parseFloat(el.getAttribute("data-lng") ?? "");
+    if (name && kind && Number.isFinite(lat) && Number.isFinite(lng)) {
+      features.push({ name, kind, lat, lng });
+    }
+  });
+  // Remove the hidden data block from the parsed inner SVG.
+  doc.querySelectorAll(".layer-water-features-data").forEach((g) => g.remove());
+  return features;
+};
+
+const renderWaterLabels = (
+  mx: number, my: number, mw: number, mh: number, minDim: number,
+): string => {
+  if (waterFeatures.length === 0) return "";
+  const showSea = seaLabelsToggle.checked;
+  const showLake = lakeLabelsToggle.checked;
+  const showRiver = riverLabelsToggle.checked;
+  if (!showSea && !showLake && !showRiver) return "";
+
+  const fs = minDim * 0.018;
+  let body = "";
+  for (const f of waterFeatures) {
+    if (f.kind === "sea" && !showSea) continue;
+    if (f.kind === "lake" && !showLake) continue;
+    if (f.kind === "river" && !showRiver) continue;
+    let x: number;
+    let y: number;
+    const override = waterOverrides.get(f.name);
+    if (override) {
+      x = override.x;
+      y = override.y;
+    } else {
+      const fake: Poi = {
+        id: "", lat: f.lat, lng: f.lng,
+        text: "", style: "pin",
+        color: "", textColor: "", sizeFrac: 0, markerScale: 1,
+        fontSizePx: 4, textBg: false, textBgColor: "", textPosition: "bottom",
+      };
+      const p = projectPoiToCanvas(fake, mx, my, mw, mh);
+      if (!p) continue;
+      x = p.x;
+      y = p.y;
+    }
+    body +=
+      `    <text class="water-label water-${f.kind}" data-name="${escapeXml(f.name)}" ` +
+      `x="${x.toFixed(2)}" y="${y.toFixed(2)}" ` +
+      `font-size="${fs.toFixed(2)}" text-anchor="middle" ` +
+      `style="cursor:move">${escapeXml(f.name)}</text>\n`;
+  }
+  if (!body) return "";
+  return `  <g class="layer-water-labels" data-source="client">\n${body}  </g>\n`;
+};
 
 // -- Composition -------------------------------------------------------------
 
@@ -2617,6 +2951,9 @@ const composeSvg = (forExport = false): string | null => {
   const mapSvgEl = doc.querySelector("svg");
   if (!mapSvgEl) return null;
   const mapVb = mapSvgEl.getAttribute("viewBox") ?? `0 0 1000 ${1000 / aspect}`;
+  // Pull water features out so the frontend can render labels client-side
+  // (and let users drag them). The extractor also strips the hidden block.
+  waterFeatures = extractWaterFeatures(doc);
   const mapInner = mapSvgEl.innerHTML;
 
   const overlaysXml = overlays
@@ -2698,6 +3035,8 @@ const composeSvg = (forExport = false): string | null => {
     graticuleXml = renderGraticule(
       norm(), mx, my, mw, mh, minDim,
       graticuleLabelsToggle.checked,
+      graticuleColorInput.value,
+      graticuleHaloColorInput.value,
     );
   }
 
@@ -2769,14 +3108,24 @@ const composeSvg = (forExport = false): string | null => {
       ? `<defs>${rotationDefs}</defs>`
       : "";
 
-  // Map content + everything anchored by lat/lng (graticule, cross, POIs)
-  // rotates together. Anything anchored to the canvas (border, scale bar,
-  // attribution, info strip, overlays) stays axis-aligned.
+  // Map content + everything anchored by lat/lng (graticule, cross, POIs,
+  // routes) rotates together. Anything anchored to the canvas (border, scale
+  // bar, attribution, info strip, overlays) stays axis-aligned.
   const mapBlock =
     `  <svg xmlns="http://www.w3.org/2000/svg" x="${mx}" y="${my}" width="${mw}" height="${mh}" viewBox="${mapVb}" preserveAspectRatio="xMidYMid meet"${mapAttrs}>\n` +
     mapInner +
     `  </svg>\n`;
-  const latLngAnchored = mapBlock + graticuleXml + crossXml + poiXml;
+  const { defs: routeDefs, body: routeXml } = renderRoutes(mx, my, mw, mh);
+  if (routeDefs) {
+    defs = defs
+      ? defs.replace("</defs>", routeDefs + "</defs>")
+      : `<defs>${routeDefs}</defs>`;
+  }
+  // Water labels follow routes and sit under POIs so place markers stay on top.
+  const waterLabelsXml = renderWaterLabels(mx, my, mw, mh, minDim);
+  // Routes draw BEFORE POIs so markers sit on top of the line.
+  const latLngAnchored =
+    mapBlock + graticuleXml + routeXml + waterLabelsXml + crossXml + poiXml;
   const wrappedLatLng = rotationOpen
     ? rotationOpen + latLngAnchored + rotationClose
     : latLngAnchored;
@@ -2830,6 +3179,9 @@ const recompose = () => {
   bindPoiDragHandlers();
   bindAtlasInfoDrag();
   bindFreeformHandles();
+  bindScaleBarDrag();
+  bindAttributionDrag();
+  bindWaterLabelDrag();
 };
 
 // -- Overlay drag on preview SVG ---------------------------------------------
@@ -3019,6 +3371,22 @@ const bindFreeformHandles = () => {
         }
         if (nw < 10) { nw = 10; if (handleId.includes("w")) nx = sX + sW - 10; }
         if (nh < 10) { nh = 10; if (handleId.includes("n")) ny = sY + sH - 10; }
+
+        // Snap to canvas center / edges when moving (and Shift not held).
+        if (handleId === "move" && !ev.shiftKey) {
+          const aspect = lastMapAspect ?? 1;
+          const { w: cw, h: ch } = canvasDims(aspect);
+          const thresh = Math.min(cw, ch) * 0.015;
+          const xCandidates = [0, cw - nw, (cw - nw) / 2];
+          const yCandidates = [0, ch - nh, (ch - nh) / 2];
+          for (const xc of xCandidates) {
+            if (Math.abs(nx - xc) < thresh) { nx = xc; break; }
+          }
+          for (const yc of yCandidates) {
+            if (Math.abs(ny - yc) < thresh) { ny = yc; break; }
+          }
+        }
+
         pX = nx; pY = ny; pW = nw; pH = nh;
         if (raf === null) raf = requestAnimationFrame(flush);
       };
@@ -3037,6 +3405,160 @@ const bindFreeformHandles = () => {
       document.addEventListener("pointerup", onUp);
       document.addEventListener("pointercancel", onUp);
     });
+
+    if (handleId === "move") {
+      h.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+        const aspect = lastMapAspect ?? 1;
+        const { w: cw, h: ch } = canvasDims(aspect);
+        // Default: 70% of the canvas, centered.
+        const nw = cw * 0.7;
+        const nh = ch * 0.7;
+        const nx = (cw - nw) / 2;
+        const ny = (ch - nh) / 2;
+        freeformXInput.value = nx.toFixed(2);
+        freeformYInput.value = ny.toFixed(2);
+        freeformWInput.value = nw.toFixed(2);
+        freeformHInput.value = nh.toFixed(2);
+        recompose();
+      });
+    }
+  });
+};
+
+// -- Water label drag --------------------------------------------------------
+
+const bindWaterLabelDrag = () => {
+  const svg = previewEl.querySelector<SVGSVGElement>("svg");
+  if (!svg) return;
+  svg
+    .querySelectorAll<SVGTextElement>('g.layer-water-labels[data-source="client"] text.water-label')
+    .forEach((t) => {
+      const name = t.dataset.name;
+      if (!name) return;
+
+      t.addEventListener("pointerdown", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const startSvg = toSvgPoint(svg, e.clientX, e.clientY);
+        const sX = parseFloat(t.getAttribute("x") ?? "0");
+        const sY = parseFloat(t.getAttribute("y") ?? "0");
+        let raf: number | null = null;
+
+        const onMove = (ev: PointerEvent) => {
+          const cur = previewEl.querySelector<SVGSVGElement>("svg");
+          if (!cur) return;
+          const p = toSvgPoint(cur, ev.clientX, ev.clientY);
+          const nx = sX + (p.x - startSvg.x);
+          const ny = sY + (p.y - startSvg.y);
+          waterOverrides.set(name, { x: nx, y: ny });
+          if (raf === null) {
+            raf = requestAnimationFrame(() => {
+              recompose();
+              raf = null;
+            });
+          }
+        };
+        const onUp = () => {
+          if (raf !== null) cancelAnimationFrame(raf);
+          document.removeEventListener("pointermove", onMove);
+          document.removeEventListener("pointerup", onUp);
+          document.removeEventListener("pointercancel", onUp);
+          recompose();
+        };
+        document.addEventListener("pointermove", onMove);
+        document.addEventListener("pointerup", onUp);
+        document.addEventListener("pointercancel", onUp);
+      });
+    });
+};
+
+// -- Scale bar drag ----------------------------------------------------------
+
+const bindScaleBarDrag = () => {
+  if (!scalebarToggle.checked) return;
+  const svg = previewEl.querySelector<SVGSVGElement>("svg");
+  if (!svg) return;
+  const sb = svg.querySelector<SVGGElement>("g.scalebar");
+  if (!sb) return;
+
+  sb.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startSvg = toSvgPoint(svg, e.clientX, e.clientY);
+    const sX = parseFloat(scalebarXInput.value) || 0;
+    const sY = parseFloat(scalebarYInput.value) || 0;
+    let raf: number | null = null;
+
+    const onMove = (ev: PointerEvent) => {
+      const cur = previewEl.querySelector<SVGSVGElement>("svg");
+      if (!cur) return;
+      const p = toSvgPoint(cur, ev.clientX, ev.clientY);
+      const aspect = lastMapAspect ?? 1;
+      const { w: cw, h: ch } = canvasDims(aspect);
+      const nx = Math.max(0, Math.min(1, sX + (p.x - startSvg.x) / cw));
+      const ny = Math.max(0, Math.min(1, sY + (p.y - startSvg.y) / ch));
+      scalebarXInput.value = nx.toFixed(3);
+      scalebarYInput.value = ny.toFixed(3);
+      if (raf === null) {
+        raf = requestAnimationFrame(() => {
+          recompose();
+          raf = null;
+        });
+      }
+    };
+    const onUp = () => {
+      if (raf !== null) cancelAnimationFrame(raf);
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+      recompose();
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
+  });
+};
+
+// -- Attribution drag --------------------------------------------------------
+
+const bindAttributionDrag = () => {
+  const svg = previewEl.querySelector<SVGSVGElement>("svg");
+  if (!svg) return;
+  const a = svg.querySelector<SVGTextElement>("text.attribution");
+  if (!a) return;
+
+  a.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startSvg = toSvgPoint(svg, e.clientX, e.clientY);
+    const sX = parseFloat(a.getAttribute("x") ?? "0");
+    const sY = parseFloat(a.getAttribute("y") ?? "0");
+    let raf: number | null = null;
+
+    const onMove = (ev: PointerEvent) => {
+      const cur = previewEl.querySelector<SVGSVGElement>("svg");
+      if (!cur) return;
+      const p = toSvgPoint(cur, ev.clientX, ev.clientY);
+      attribAbsX = sX + (p.x - startSvg.x);
+      attribAbsY = sY + (p.y - startSvg.y);
+      if (raf === null) {
+        raf = requestAnimationFrame(() => {
+          recompose();
+          raf = null;
+        });
+      }
+    };
+    const onUp = () => {
+      if (raf !== null) cancelAnimationFrame(raf);
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+      recompose();
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
   });
 };
 
@@ -3197,7 +3719,12 @@ const render = async () => {
   try {
     const width = parseFloat(widthInput.value) || 2000;
     const shape = currentPaper().shape ?? "rect";
-    const labels = labelsToggle.checked;
+    const street_labels = streetLabelsToggle.checked;
+    const place_labels = placeLabelsToggle.checked;
+    const water_labels =
+      seaLabelsToggle.checked ||
+      lakeLabelsToggle.checked ||
+      riverLabelsToggle.checked;
     const hidden = collectHiddenLayers();
     const res = await fetch("/api/render", {
       method: "POST",
@@ -3207,7 +3734,9 @@ const render = async () => {
         width,
         css: cssEditor.value,
         shape,
-        labels,
+        street_labels,
+        place_labels,
+        water_labels,
         hidden,
       }),
     });
@@ -3341,9 +3870,30 @@ const downloadPng = async () => {
 
 renderBtn.addEventListener("click", render);
 saveCssBtn.addEventListener("click", saveCss);
-labelsToggle.addEventListener("change", () => {
-  if (lastMapSvg) void render();
-});
+for (const t of [streetLabelsToggle, placeLabelsToggle]) {
+  t.addEventListener("change", () => {
+    if (lastMapSvg) void render();
+  });
+}
+// Water-label toggles filter client-side, so a recompose is enough
+// (unless we need to fetch new data because all three were off before).
+for (const t of [seaLabelsToggle, lakeLabelsToggle, riverLabelsToggle]) {
+  t.addEventListener("change", () => {
+    if (lastMapSvg) {
+      const anyOn =
+        seaLabelsToggle.checked ||
+        lakeLabelsToggle.checked ||
+        riverLabelsToggle.checked;
+      // If turning on for the first time after a no-water render, refetch
+      // so the backend embeds the data block. Otherwise recompose only.
+      if (anyOn && !lastMapSvg.includes("layer-water-features-data")) {
+        void render();
+      } else {
+        recompose();
+      }
+    }
+  });
+}
 graticuleToggle.addEventListener("change", () => recompose());
 
 // -- Layer toggles -----------------------------------------------------------
@@ -3391,9 +3941,15 @@ type SavedProject = {
   css: string;
   width: number;
   dpi: number;
-  labels: boolean;
+  streetLabels: boolean;
+  placeLabels: boolean;
+  seaLabels?: boolean;
+  lakeLabels?: boolean;
+  riverLabels?: boolean;
   graticule?: boolean;
   graticuleLabels?: boolean;
+  graticuleColor?: string;
+  graticuleHaloColor?: string;
   cross?: {
     show: boolean;
     labels?: boolean;
@@ -3406,6 +3962,7 @@ type SavedProject = {
     marker: { style: string; color?: string; sizeFrac: number };
   };
   attribCorner?: string;
+  attribAbs?: { x: number; y: number } | null;
   scalebar?: {
     show: boolean;
     auto: boolean;
@@ -3418,10 +3975,12 @@ type SavedProject = {
   freeform?: { x: number; y: number; w: number; h: number };
   atlasInfo?: { xFrac: number; yFrac: number };
   canvasBg?: { override: boolean; color: string };
+  waterOverrides?: Record<string, { x: number; y: number }>;
   hiddenLayerKeys: string[];
   frame: string;
   overlays: Overlay[];
   pois: Poi[];
+  routes?: Route[];
 };
 
 const saveProject = () => {
@@ -3442,9 +4001,15 @@ const saveProject = () => {
     css: cssEditor.value,
     width: parseFloat(widthInput.value) || 2000,
     dpi: parseFloat(dpiInput.value) || 300,
-    labels: labelsToggle.checked,
+    streetLabels: streetLabelsToggle.checked,
+    placeLabels: placeLabelsToggle.checked,
+    seaLabels: seaLabelsToggle.checked,
+    lakeLabels: lakeLabelsToggle.checked,
+    riverLabels: riverLabelsToggle.checked,
     graticule: graticuleToggle.checked,
     graticuleLabels: graticuleLabelsToggle.checked,
+    graticuleColor: graticuleColorInput.value,
+    graticuleHaloColor: graticuleHaloColorInput.value,
     cross: {
       show: crossToggle.checked,
       labels: crossLabelsToggle.checked,
@@ -3458,6 +4023,10 @@ const saveProject = () => {
       },
     },
     attribCorner: attribCornerSelect.value,
+    attribAbs:
+      attribAbsX !== null && attribAbsY !== null
+        ? { x: attribAbsX, y: attribAbsY }
+        : null,
     scalebar: {
       show: scalebarToggle.checked,
       auto: scalebarAutoToggle.checked,
@@ -3478,6 +4047,7 @@ const saveProject = () => {
       h: parseFloat(freeformHInput.value) || 180,
     },
     atlasInfo: { xFrac: atlasInfoXFrac, yFrac: atlasInfoYFrac },
+    waterOverrides: Object.fromEntries(waterOverrides),
     canvasBg: {
       override: canvasBgOverrideToggle.checked,
       color: canvasBgColorInput.value,
@@ -3488,6 +4058,7 @@ const saveProject = () => {
     frame: currentFrameId,
     overlays: overlays.map((o) => ({ ...o })),
     pois: pois.map((p) => ({ ...p })),
+    routes: routes.map((r) => ({ ...r, poiIds: r.poiIds.slice() })),
   };
   const blob = new Blob([JSON.stringify(proj, null, 2)], {
     type: "application/json",
@@ -3511,11 +4082,17 @@ const applyProject = (p: SavedProject) => {
   updateCustomVisibility();
   updateRectShape();
   updateLockButton();
-  labelsToggle.checked = !!p.labels;
+  streetLabelsToggle.checked = !!p.streetLabels;
+  placeLabelsToggle.checked = !!p.placeLabels;
+  seaLabelsToggle.checked = !!p.seaLabels;
+  lakeLabelsToggle.checked = !!p.lakeLabels;
+  riverLabelsToggle.checked = !!p.riverLabels;
   graticuleToggle.checked = !!p.graticule;
   if (typeof p.graticuleLabels === "boolean") {
     graticuleLabelsToggle.checked = p.graticuleLabels;
   }
+  if (p.graticuleColor) graticuleColorInput.value = p.graticuleColor;
+  if (p.graticuleHaloColor) graticuleHaloColorInput.value = p.graticuleHaloColor;
   if (p.cross) {
     crossToggle.checked = !!p.cross.show;
     crossLabelsToggle.checked = !!p.cross.labels;
@@ -3533,6 +4110,13 @@ const applyProject = (p: SavedProject) => {
     }
   }
   if (p.attribCorner) attribCornerSelect.value = p.attribCorner;
+  if (p.attribAbs) {
+    attribAbsX = p.attribAbs.x;
+    attribAbsY = p.attribAbs.y;
+  } else {
+    attribAbsX = null;
+    attribAbsY = null;
+  }
   if (p.scalebar) {
     scalebarToggle.checked = !!p.scalebar.show;
     scalebarAutoToggle.checked = !!p.scalebar.auto;
@@ -3559,6 +4143,12 @@ const applyProject = (p: SavedProject) => {
   if (p.canvasBg) {
     canvasBgOverrideToggle.checked = p.canvasBg.override;
     canvasBgColorInput.value = p.canvasBg.color;
+  }
+  waterOverrides.clear();
+  if (p.waterOverrides) {
+    for (const [name, pos] of Object.entries(p.waterOverrides)) {
+      waterOverrides.set(name, pos);
+    }
   }
   freeformControls.hidden = currentFrame().id !== "freeform";
   const hiddenSet = new Set(p.hiddenLayerKeys ?? []);
@@ -3588,12 +4178,19 @@ const applyProject = (p: SavedProject) => {
       ...x,
       textColor: x.textColor ?? "#1a1a1a",
       markerScale: x.markerScale ?? 1,
+      fontSizePx: x.fontSizePx ?? 4,
       textBg: x.textBg ?? false,
       textBgColor: x.textBgColor ?? "#ffffff",
       textPosition: x.textPosition ?? "bottom",
     });
   }
   renderPoiList();
+
+  routes.length = 0;
+  for (const r of p.routes ?? []) {
+    routes.push({ ...r, poiIds: (r.poiIds ?? []).slice() });
+  }
+  renderRouteList();
 
   map.once("moveend", () => {
     rectSW = new LngLat(p.rect.west, p.rect.south);
@@ -3669,4 +4266,7 @@ void (async () => {
   await loadThemeIntoEditor(THEME_CUSTOM);
   renderOverlayList();
   renderPoiList();
+  renderRouteList();
+  // Apply the default 2:1 pane split (map gets the larger area).
+  setPaneSplit(null);
 })();
