@@ -1,0 +1,66 @@
+/* newspaper — high-contrast black & white, bold ink.
+ * Inspired by old urban newsprint maps. */
+
+.background { fill: #ffffff; }
+
+.layer-landuse :where(polygon, path) { fill: #ececec; stroke: none; }
+.landuse-forest      { fill: #c8c8c8; }
+.landuse-grass       { fill: #e0e0e0; }
+.landuse-residential { fill: #f4f4f4; }
+.landuse-industrial  { fill: #d0d0d0; }
+.landuse-commercial  { fill: #d8d8d8; }
+
+.layer-leisure :where(polygon, path) { fill: #d8d8d8; stroke: none; }
+.leisure-park { fill: #c8c8c8; }
+
+.layer-water :where(polygon, path), .water { fill: #888888; stroke: #000; stroke-width: 1; }
+.layer-waterway polyline, .layer-waterway path                { fill: none; stroke: #000; stroke-width: 2.2; }
+.coastline                              { fill: none; stroke: #000; stroke-width: 4; }
+
+.layer-building :where(polygon, path) { fill: #1a1a1a; stroke: none; }
+
+.layer-rail polyline, .layer-rail path {
+  fill: none; stroke: #000; stroke-width: 2;
+  stroke-dasharray: 6 6;
+}
+
+.layer-road-casings polyline, .layer-road-casings path { stroke: none; }
+
+.layer-road polyline, .layer-road path {
+  fill: none;
+  stroke: #000;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+}
+.road-path        { stroke-width: 0.6; stroke-dasharray: 1.5 2; }
+.road-service     { stroke-width: 1.0; }
+.road-residential { stroke-width: 1.8; }
+.road-tertiary    { stroke-width: 3.0; }
+.road-secondary   { stroke-width: 4.2; }
+.road-primary     { stroke-width: 5.6; }
+.road-trunk       { stroke-width: 7.0; }
+.road-motorway    { stroke-width: 8.6; }
+.road-other       { stroke-width: 1.2; }
+
+.layer-road-labels text {
+  font-family: "Times New Roman", Times, serif;
+  fill: #000;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 2.4;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.layer-places text {
+  font-family: "Times New Roman", Times, serif;
+  fill: #000;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3;
+  font-weight: 700;
+}
+.place-city { letter-spacing: 0.22em; text-transform: uppercase; }
+.place-town { letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600; }
+.place-village { font-weight: 600; letter-spacing: 0.06em; }
+.place-suburb { font-style: italic; font-weight: 500; }

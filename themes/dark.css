@@ -1,0 +1,65 @@
+/* dark — light strokes on near-black. Poster-friendly. */
+
+.background { fill: #111418; }
+
+.layer-landuse :where(polygon, path) { fill: #14181c; stroke: none; }
+.landuse-forest      { fill: #1a2620; }
+.landuse-grass       { fill: #1c241f; }
+.landuse-residential { fill: #14181c; }
+.landuse-industrial  { fill: #181a1c; }
+.landuse-commercial  { fill: #181a1c; }
+
+.layer-leisure :where(polygon, path) { fill: #1a241e; stroke: none; }
+.leisure-park    { fill: #1c2620; }
+
+.layer-water :where(polygon, path), .water { fill: #1c2a36; stroke: #2c4a66; stroke-width: 1.2; }
+.layer-waterway polyline, .layer-waterway path                { fill: none; stroke: #4a7a98; stroke-width: 2; }
+.coastline                              { fill: none; stroke: #e8eef4; stroke-width: 2.5; }
+
+.layer-building :where(polygon, path) { fill: #20262d; stroke: #2a3138; stroke-width: 0.4; }
+
+.layer-rail polyline, .layer-rail path {
+  fill: none; stroke: #5a6470; stroke-width: 1.6;
+  stroke-dasharray: 5 5;
+}
+
+.layer-road-casings polyline, .layer-road-casings path { stroke: none; }
+
+.layer-road polyline, .layer-road path {
+  fill: none;
+  stroke: #d4d8de;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.92;
+}
+.road-path        { stroke: #5a6470; stroke-width: 0.8; opacity: 0.5; }
+.road-service     { stroke: #6a727c; stroke-width: 1.2; }
+.road-residential { stroke: #9aa3ad; stroke-width: 2.0; }
+.road-tertiary    { stroke: #b8c0c8; stroke-width: 3.0; }
+.road-secondary   { stroke: #c8cfd6; stroke-width: 4.0; }
+.road-primary     { stroke: #e8eef4; stroke-width: 5.0; }
+.road-trunk       { stroke: #ffffff; stroke-width: 5.8; }
+.road-motorway    { stroke: #ffffff; stroke-width: 6.6; }
+.road-other       { stroke: #7a828c; stroke-width: 1.4; }
+
+.layer-road-labels text {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  fill: #d4d8de;
+  paint-order: stroke;
+  stroke: #111418;
+  stroke-width: 2.2;
+  letter-spacing: 0.06em;
+}
+
+.layer-places text {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  fill: #f4f6f8;
+  paint-order: stroke;
+  stroke: #111418;
+  stroke-width: 2.5;
+}
+.place-city { font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; }
+.place-town { font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+.place-village { font-weight: 500; }
+.place-suburb { font-style: italic; fill: #b8c0c8; }
+.place-neighbourhood { font-style: italic; fill: #9aa3ad; }

@@ -1,0 +1,24 @@
+/* minimal — black ink on white, roads only. */
+
+.background { fill: #ffffff; }
+
+.layer-landuse, .layer-leisure, .layer-building,
+.layer-water, .layer-waterway, .layer-rail { display: none; }
+
+.coastline { fill: none; stroke: #000; stroke-width: 4; }
+
+.layer-road polyline, .layer-road path {
+  fill: none;
+  stroke: #000;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.road-path        { stroke-width: 0.6; }
+.road-service     { stroke-width: 1.0; }
+.road-residential { stroke-width: 1.5; }
+.road-tertiary    { stroke-width: 2.5; }
+.road-secondary   { stroke-width: 3.5; }
+.road-primary     { stroke-width: 4.5; }
+.road-trunk       { stroke-width: 5.5; }
+.road-motorway    { stroke-width: 6.5; }
+.road-other       { stroke-width: 1.0; }

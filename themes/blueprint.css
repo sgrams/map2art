@@ -1,0 +1,34 @@
+/* blueprint — white lines on deep blue. */
+
+.background { fill: #0d3b66; }
+
+.layer-landuse :where(polygon, path),
+.layer-leisure :where(polygon, path) { fill: none; stroke: none; }
+
+.layer-water :where(polygon, path), .water { fill: #1c4e80; stroke: #cfe2f3; stroke-width: 0.6; }
+.layer-waterway polyline, .layer-waterway path                { fill: none; stroke: #cfe2f3; stroke-width: 2; }
+.coastline                              { fill: none; stroke: #ffffff; stroke-width: 4; }
+
+.layer-building :where(polygon, path) { fill: #1c4e80; stroke: #cfe2f3; stroke-width: 0.4; }
+
+.layer-rail polyline, .layer-rail path {
+  fill: none; stroke: #cfe2f3; stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+}
+
+.layer-road polyline, .layer-road path {
+  fill: none;
+  stroke: #cfe2f3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.9;
+}
+.road-path        { stroke-width: 0.8; opacity: 0.5; }
+.road-service     { stroke-width: 1.2; }
+.road-residential { stroke-width: 2; }
+.road-tertiary    { stroke-width: 3; }
+.road-secondary   { stroke-width: 4; }
+.road-primary     { stroke: #ffffff; stroke-width: 5; }
+.road-trunk       { stroke: #ffffff; stroke-width: 6; }
+.road-motorway    { stroke: #ffffff; stroke-width: 7; }
+.road-other       { stroke-width: 1.5; }
