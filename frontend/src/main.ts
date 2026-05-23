@@ -1,5 +1,9 @@
 import maplibregl, { LngLat } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { EditorView, basicSetup } from "codemirror";
+import { EditorState } from "@codemirror/state";
+import { keymap } from "@codemirror/view";
+import { css as cssLanguage } from "@codemirror/lang-css";
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -36,6 +40,16 @@ const crossCenterBtn = $<HTMLButtonElement>("cross-center-btn");
 const crossMarkerStyleSelect = $<HTMLSelectElement>("cross-marker-style");
 const crossMarkerSizeInput = $<HTMLInputElement>("cross-marker-size");
 const attribCornerSelect = $<HTMLSelectElement>("attrib-corner");
+const canvasBgOverrideToggle = $<HTMLInputElement>("canvas-bg-override-toggle");
+const canvasBgColorInput = $<HTMLInputElement>("canvas-bg-color");
+const borderToggle = $<HTMLInputElement>("border-toggle");
+const borderColorInput = $<HTMLInputElement>("border-color");
+const borderWidthInput = $<HTMLInputElement>("border-width");
+const freeformControls = $<HTMLDivElement>("freeform-controls");
+const freeformXInput = $<HTMLInputElement>("freeform-x");
+const freeformYInput = $<HTMLInputElement>("freeform-y");
+const freeformWInput = $<HTMLInputElement>("freeform-w");
+const freeformHInput = $<HTMLInputElement>("freeform-h");
 const scalebarToggle = $<HTMLInputElement>("scalebar-toggle");
 const scalebarAutoToggle = $<HTMLInputElement>("scalebar-auto");
 const scalebarLengthInput = $<HTMLInputElement>("scalebar-length");
@@ -53,7 +67,50 @@ const lockBtn = $<HTMLButtonElement>("lock-btn");
 const customPaperFields = $<HTMLSpanElement>("custom-paper-fields");
 const customWInput = $<HTMLInputElement>("custom-w");
 const customHInput = $<HTMLInputElement>("custom-h");
-const cssEditor = $<HTMLTextAreaElement>("css-editor");
+const cssEditorEl = $<HTMLDivElement>("css-editor");
+// CodeMirror EditorView mounted into #css-editor. The `cssEditor` shim below
+// preserves the old .value get/set API used throughout the rest of the file.
+const cssEditorView = new EditorView({
+  state: EditorState.create({
+    doc: "",
+    extensions: [
+      basicSetup,
+      cssLanguage(),
+      EditorView.theme(
+        {
+          "&": { height: "100%" },
+          ".cm-scroller": { overflow: "auto" },
+        },
+        { dark: true },
+      ),
+      keymap.of([
+        {
+          key: "Mod-Enter",
+          run: () => {
+            void render();
+            return true;
+          },
+        },
+      ]),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) {
+          if (crossToggle.checked) recompose();
+        }
+      }),
+    ],
+  }),
+  parent: cssEditorEl,
+});
+const cssEditor = {
+  get value(): string {
+    return cssEditorView.state.doc.toString();
+  },
+  set value(v: string) {
+    cssEditorView.dispatch({
+      changes: { from: 0, to: cssEditorView.state.doc.length, insert: v },
+    });
+  },
+};
 const previewEl = $<HTMLDivElement>("preview");
 const bboxLabel = $<HTMLDivElement>("bbox-label");
 const bboxScaleEl = $<HTMLDivElement>("bbox-scale");
@@ -111,6 +168,11 @@ const endBearingDrag = (e: PointerEvent) => {
 };
 mapEl.addEventListener("pointerup", endBearingDrag);
 mapEl.addEventListener("pointercancel", endBearingDrag);
+// When the picker's bearing settles, refresh the composed preview so it
+// matches the new orientation.
+map.on("rotateend", () => {
+  if (lastMapSvg) recompose();
+});
 // Suppress browser autoscroll/middle-paste on the map.
 mapEl.addEventListener("auxclick", (e) => {
   if (e.button === 1) e.preventDefault();
@@ -668,11 +730,13 @@ type Frame = {
   marginRight: number;
   marginBottom: number;
   marginLeft: number;
-  decoration?: "shadow" | "border";
+  decoration?: "shadow";
   canvasBg?: string;
   /** If true, composeSvg auto-prints the bbox center coords, dims, and scale
    *  into the bottom margin. Useful for field-notes / atlas layouts. */
   infoStrip?: boolean;
+  /** Initial border state applied when this frame is selected. */
+  border?: { enabled: boolean; color: string; width: number };
 };
 
 const FRAMES: Frame[] = [
@@ -681,6 +745,7 @@ const FRAMES: Frame[] = [
     label: "Minimal",
     description: "Thin even margins. The map fills the canvas.",
     marginTop: 0.05, marginRight: 0.05, marginBottom: 0.05, marginLeft: 0.05,
+    border: { enabled: false, color: "#222222", width: 0.5 },
   },
   {
     id: "polaroid",
@@ -689,34 +754,61 @@ const FRAMES: Frame[] = [
     marginTop: 0.07, marginRight: 0.07, marginBottom: 0.24, marginLeft: 0.07,
     decoration: "shadow",
     canvasBg: "#ffffff",
+    border: { enabled: false, color: "#222222", width: 0.5 },
   },
   {
     id: "field-notes",
     label: "Field notes",
     description: "Thin black border around the map plus a metadata strip below — coordinates, scale, date.",
     marginTop: 0.05, marginRight: 0.05, marginBottom: 0.14, marginLeft: 0.05,
-    decoration: "border",
     canvasBg: "#f4efe2",
+    border: { enabled: true, color: "#222222", width: 0.5 },
   },
   {
     id: "poster",
     label: "Poster",
     description: "Tall top margin for a large title strip, map dominates the bottom.",
     marginTop: 0.22, marginRight: 0.05, marginBottom: 0.08, marginLeft: 0.05,
+    border: { enabled: false, color: "#222222", width: 0.5 },
   },
   {
     id: "atlas",
     label: "Atlas",
-    description: "Field-notes layout that auto-prints the rectangle's coordinates, dimensions, and scale into the bottom strip — no overlay needed.",
+    description: "Field-notes layout that auto-prints the rectangle's coordinates, dimensions, and scale into the bottom strip — no overlay needed. Strip is draggable.",
     marginTop: 0.05, marginRight: 0.05, marginBottom: 0.18, marginLeft: 0.05,
-    decoration: "border",
     canvasBg: "#f4efe2",
     infoStrip: true,
+    border: { enabled: true, color: "#222222", width: 0.5 },
+  },
+  {
+    id: "freeform",
+    label: "Freeform",
+    description: "Position and size the map manually inside the canvas. Use the X / Y / W / H inputs below to place it anywhere.",
+    marginTop: 0, marginRight: 0, marginBottom: 0, marginLeft: 0,
+    border: { enabled: false, color: "#222222", width: 0.5 },
   },
 ];
 let currentFrameId = "minimal";
 const currentFrame = (): Frame =>
   FRAMES.find((f) => f.id === currentFrameId) ?? FRAMES[0];
+
+// Atlas info-strip drag position (canvas fractions).
+let atlasInfoXFrac = 0.5;
+let atlasInfoYFrac = 0.93;
+
+const applyFrameDefaults = (f: Frame) => {
+  if (f.border) {
+    borderToggle.checked = f.border.enabled;
+    borderColorInput.value = f.border.color;
+    borderWidthInput.value = String(f.border.width);
+  }
+  freeformControls.hidden = f.id !== "freeform";
+  if (f.id === "atlas") {
+    // Reset atlas strip to its default bottom-center position when picking atlas.
+    atlasInfoXFrac = 0.5;
+    atlasInfoYFrac = 0.93;
+  }
+};
 
 const frameOptionsEl = $<HTMLUListElement>("frame-options");
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -734,8 +826,8 @@ const renderFramePreview = (f: Frame): SVGSVGElement => {
   map.setAttribute("width", String((1 - f.marginLeft - f.marginRight) * 100));
   map.setAttribute("height", String((1 - f.marginTop - f.marginBottom) * 70));
   map.setAttribute("fill", "#9aa3ad");
-  if (f.decoration === "border") {
-    map.setAttribute("stroke", "#222");
+  if (f.border?.enabled) {
+    map.setAttribute("stroke", f.border.color);
     map.setAttribute("stroke-width", "0.5");
   }
   svg.appendChild(map);
@@ -781,6 +873,7 @@ const renderFrameOptions = () => {
         opt.classList.remove("selected");
       }
       lbl.classList.add("selected");
+      applyFrameDefaults(f);
       recompose();
     });
     const preview = renderFramePreview(f);
@@ -793,6 +886,17 @@ const renderFrameOptions = () => {
   }
 };
 renderFrameOptions();
+applyFrameDefaults(currentFrame());
+
+// Wire border + freeform + canvas-bg inputs.
+for (const el of [
+  borderToggle, borderColorInput, borderWidthInput,
+  freeformXInput, freeformYInput, freeformWInput, freeformHInput,
+  canvasBgOverrideToggle, canvasBgColorInput,
+] as const) {
+  el.addEventListener("input", () => recompose());
+  el.addEventListener("change", () => recompose());
+}
 
 // -- Scale of the selection -------------------------------------------------
 
@@ -1000,11 +1104,12 @@ const addOverlay = () => {
     setStatus("render the map first, then add text", "error");
     return;
   }
+  snapshot();
   const aspect = lastMapAspect ?? 1;
   const { w, h } = canvasDims(aspect);
   overlays.push({
     id: newOverlayId(),
-    text: "TITLE",
+    text: suggestedTitle ? suggestedTitle.toUpperCase() : "TITLE",
     x: w / 2,
     y: h * 0.92,
     fontSize: Math.round(Math.min(w, h) * 0.06 * 10) / 10,
@@ -1130,6 +1235,7 @@ const renderOverlayList = () => {
     del.textContent = "✕";
     del.title = "Delete overlay";
     del.addEventListener("click", () => {
+      snapshot();
       const i = overlays.findIndex((x) => x.id === o.id);
       if (i >= 0) overlays.splice(i, 1);
       selectedIds.delete(o.id);
@@ -1337,6 +1443,7 @@ const refreshTemplateSelect = () => {
 };
 
 const applyTemplate = (template: Template) => {
+  snapshot();
   const aspect = lastMapAspect ?? 1;
   const { w: cw, h: ch } = canvasDims(aspect);
   const minDim = Math.min(cw, ch);
@@ -1434,6 +1541,8 @@ refreshTemplateSelect();
 
 type PoiStyle = "pin" | "dot" | "bubble" | "numbered" | "flag";
 
+type TextPosition = "top" | "bottom" | "left" | "right";
+
 type Poi = {
   id: string;
   lat: number;
@@ -1447,6 +1556,14 @@ type Poi = {
   textColor: string;
   /** Marker scale relative to min(canvasW, canvasH). */
   sizeFrac: number;
+  /** Multiplier applied to the marker geometry only — lets you grow/shrink
+   *  the icon without changing the label size. Default 1. */
+  markerScale: number;
+  /** Optional rounded background behind the label (ignored for bubble). */
+  textBg: boolean;
+  textBgColor: string;
+  /** Side of the marker where the label sits (ignored for bubble). */
+  textPosition: TextPosition;
 };
 
 const POI_STYLES: Array<{ id: PoiStyle; label: string }> = [
@@ -1461,7 +1578,84 @@ const pois: Poi[] = [];
 
 const newPoiId = () => "p" + Math.random().toString(36).slice(2, 10);
 
+// Reverse-geocoded place name (filled after each render); used as the default
+// text for new title overlays.
+let suggestedTitle: string | null = null;
+
+// -- Undo / redo for overlays + POIs ----------------------------------------
+
+type HistorySnap = { overlays: Overlay[]; pois: Poi[] };
+const undoStack: HistorySnap[] = [];
+const redoStack: HistorySnap[] = [];
+const HISTORY_LIMIT = 80;
+
+const cloneSnap = (): HistorySnap => ({
+  overlays: overlays.map((o) => ({ ...o })),
+  pois: pois.map((p) => ({ ...p })),
+});
+
+const restoreSnap = (snap: HistorySnap) => {
+  overlays.length = 0;
+  for (const o of snap.overlays) overlays.push({ ...o });
+  pois.length = 0;
+  for (const p of snap.pois) pois.push({ ...p });
+  selectedIds.clear();
+  renderOverlayList();
+  renderPoiList();
+  recompose();
+};
+
+/** Capture the current overlays+pois state to the undo stack. */
+const snapshot = () => {
+  undoStack.push(cloneSnap());
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+  redoStack.length = 0;
+};
+
+const undo = () => {
+  if (undoStack.length === 0) return;
+  redoStack.push(cloneSnap());
+  const prev = undoStack.pop()!;
+  restoreSnap(prev);
+  setStatus("undo", "ok");
+};
+
+const redo = () => {
+  if (redoStack.length === 0) return;
+  undoStack.push(cloneSnap());
+  const next = redoStack.pop()!;
+  restoreSnap(next);
+  setStatus("redo", "ok");
+};
+
+const fetchSuggestedTitle = async () => {
+  const b = norm();
+  const lat = (b.south + b.north) / 2;
+  const lng = (b.east + b.west) / 2;
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=jsonv2&accept-language=${encodeURIComponent(navigator.language || "en")}`,
+    );
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      address?: Record<string, string>;
+      name?: string;
+    };
+    const a = data.address ?? {};
+    const name =
+      a.city || a.town || a.village || a.hamlet || a.suburb ||
+      a.county || a.state || data.name || "";
+    suggestedTitle = name.trim() || null;
+    if (suggestedTitle) {
+      setStatus(`Place: ${suggestedTitle} — used for next “+ Add text”`, "ok");
+    }
+  } catch {
+    /* offline / rate-limited; ignore */
+  }
+};
+
 const addPoi = (atLat?: number, atLng?: number) => {
+  snapshot();
   const b = norm();
   const lat = atLat ?? (b.south + b.north) / 2;
   const lng = atLng ?? (b.west + b.east) / 2;
@@ -1474,6 +1668,10 @@ const addPoi = (atLat?: number, atLng?: number) => {
     color: "#e25c5c",
     textColor: "#1a1a1a",
     sizeFrac: 0.04,
+    markerScale: 1,
+    textBg: false,
+    textBgColor: "#ffffff",
+    textPosition: "bottom",
   });
   renderPoiList();
   recompose();
@@ -1564,6 +1762,7 @@ const renderPoiList = () => {
     del.textContent = "✕";
     del.title = "Delete POI";
     del.addEventListener("click", () => {
+      snapshot();
       const i = pois.findIndex((x) => x.id === p.id);
       if (i >= 0) pois.splice(i, 1);
       renderPoiList();
@@ -1571,7 +1770,63 @@ const renderPoiList = () => {
     });
 
     controls.append(lat, lng, style, color, textColor, size, del);
-    li.append(text, controls);
+
+    const extras = document.createElement("div");
+    extras.className = "poi-extras";
+
+    const markerScale = document.createElement("input");
+    markerScale.type = "number";
+    markerScale.step = "0.1";
+    markerScale.min = "0.1";
+    markerScale.value = String(p.markerScale);
+    markerScale.title = "Marker scale (multiplier on icon size)";
+    const markerScaleLbl = document.createElement("label");
+    markerScaleLbl.append("Marker ×", markerScale);
+    markerScaleLbl.addEventListener("input", () => {
+      const v = parseFloat(markerScale.value);
+      if (Number.isFinite(v) && v > 0) {
+        p.markerScale = v;
+        recompose();
+      }
+    });
+
+    const posSel = document.createElement("select");
+    for (const pos of ["top", "bottom", "left", "right"] as const) {
+      const opt = new Option(pos, pos);
+      posSel.appendChild(opt);
+    }
+    posSel.value = p.textPosition;
+    posSel.title = "Label position relative to the marker";
+    posSel.addEventListener("change", () => {
+      p.textPosition = posSel.value as TextPosition;
+      recompose();
+    });
+    const posLbl = document.createElement("label");
+    posLbl.append("Text pos", posSel);
+
+    const bgCheck = document.createElement("input");
+    bgCheck.type = "checkbox";
+    bgCheck.checked = p.textBg;
+    bgCheck.title = "Show a rounded background behind the label";
+    bgCheck.addEventListener("change", () => {
+      p.textBg = bgCheck.checked;
+      recompose();
+    });
+    const bgCheckRow = document.createElement("label");
+    bgCheckRow.className = "check-row";
+    bgCheckRow.append(bgCheck, "bg");
+
+    const bgColor = document.createElement("input");
+    bgColor.type = "color";
+    bgColor.value = p.textBgColor;
+    bgColor.title = "Label background color";
+    bgColor.addEventListener("input", () => {
+      p.textBgColor = bgColor.value;
+      recompose();
+    });
+
+    extras.append(markerScaleLbl, posLbl, bgCheckRow, bgColor);
+    li.append(text, controls, extras);
     poiListEl.appendChild(li);
   }
   poiEmptyEl.hidden = pois.length > 0;
@@ -1649,46 +1904,131 @@ const inverseMercator = (x: number, y: number) => {
   return { lng, lat };
 };
 
+/** Place a label relative to a marker's bounding box and optionally render a
+ *  rounded background behind it. Returns the SVG fragment (rect + text). */
+const renderPoiLabel = (
+  poi: Poi,
+  bounds: { top: number; bottom: number; left: number; right: number },
+  fontSize: number,
+  weight: number | string = 500,
+  halo: boolean = true,
+): string => {
+  if (!poi.text) return "";
+  const pad = fontSize * 0.32;
+  let x: number;
+  let y: number;
+  let anchor: "start" | "middle" | "end";
+  let baseline: "alphabetic" | "middle" | "hanging";
+  switch (poi.textPosition) {
+    case "top":
+      x = (bounds.left + bounds.right) / 2;
+      y = bounds.top - pad;
+      anchor = "middle";
+      baseline = "alphabetic";
+      break;
+    case "left":
+      x = bounds.left - pad;
+      y = (bounds.top + bounds.bottom) / 2;
+      anchor = "end";
+      baseline = "middle";
+      break;
+    case "right":
+      x = bounds.right + pad;
+      y = (bounds.top + bounds.bottom) / 2;
+      anchor = "start";
+      baseline = "middle";
+      break;
+    case "bottom":
+    default:
+      x = (bounds.left + bounds.right) / 2;
+      y = bounds.bottom + pad + fontSize * 0.85;
+      anchor = "middle";
+      baseline = "alphabetic";
+      break;
+  }
+
+  let bg = "";
+  if (poi.textBg) {
+    const estimatedW = Math.max(1, poi.text.length) * fontSize * 0.55;
+    const padX = fontSize * 0.45;
+    const padY = fontSize * 0.28;
+    let rx: number;
+    if (anchor === "start") rx = x - padX;
+    else if (anchor === "end") rx = x - estimatedW - padX;
+    else rx = x - estimatedW / 2 - padX;
+    let ry: number;
+    if (baseline === "alphabetic") ry = y - fontSize + padY * 0.4;
+    else ry = y - fontSize / 2 - padY * 0.2; // "middle"
+    const rw = estimatedW + 2 * padX;
+    const rh = fontSize + 2 * padY * 0.7;
+    const radius = Math.min(rh / 2, fontSize * 0.5);
+    bg =
+      `    <rect x="${rx.toFixed(2)}" y="${ry.toFixed(2)}" ` +
+      `width="${rw.toFixed(2)}" height="${rh.toFixed(2)}" ` +
+      `rx="${radius.toFixed(2)}" ry="${radius.toFixed(2)}" ` +
+      `fill="${poi.textBgColor}" stroke="rgba(0,0,0,0.18)" stroke-width="${(fontSize * 0.04).toFixed(3)}"/>\n`;
+  }
+
+  // When a bg is shown the halo is redundant and just thickens the type;
+  // skip it. Otherwise paint-order + white stroke keeps text legible
+  // against busy map backgrounds.
+  const haloAttrs =
+    halo && !poi.textBg
+      ? ` paint-order="stroke" stroke="#ffffff" stroke-width="${(fontSize * 0.18).toFixed(3)}"`
+      : "";
+
+  return (
+    bg +
+    `    <text x="${x.toFixed(2)}" y="${y.toFixed(2)}" ` +
+    `font-size="${fontSize.toFixed(2)}" font-family="Helvetica, Arial, sans-serif" ` +
+    `font-weight="${weight}" text-anchor="${anchor}" ` +
+    `dominant-baseline="${baseline}" fill="${poi.textColor}"${haloAttrs}>${escapeXml(poi.text)}</text>\n`
+  );
+};
+
 const renderPoiPin = (poi: Poi, x: number, y: number, s: number): string => {
+  const m = s * poi.markerScale;
   const fontSize = s * 0.42;
-  const halo = fontSize * 0.18;
+  const bounds = {
+    top: y - m * 1.5,
+    bottom: y,
+    left: x - m * 0.52,
+    right: x + m * 0.52,
+  };
   return (
     `  <g class="poi poi-pin" data-id="${poi.id}" style="cursor:move">\n` +
-    `    <path d="M ${x.toFixed(2)},${y.toFixed(2)} L ${(x - s * 0.42).toFixed(2)},${(y - s * 0.95).toFixed(2)} A ${(s * 0.52).toFixed(2)},${(s * 0.52).toFixed(2)} 0 1 1 ${(x + s * 0.42).toFixed(2)},${(y - s * 0.95).toFixed(2)} Z" fill="${poi.color}" stroke="#111" stroke-width="${(s * 0.04).toFixed(3)}"/>\n` +
-    `    <circle cx="${x.toFixed(2)}" cy="${(y - s * 1.05).toFixed(2)}" r="${(s * 0.16).toFixed(2)}" fill="#ffffff"/>\n` +
-    (poi.text
-      ? `    <text x="${x.toFixed(2)}" y="${(y + s * 0.32 + fontSize).toFixed(2)}" font-size="${fontSize.toFixed(2)}" font-family="Helvetica, Arial, sans-serif" font-weight="600" text-anchor="middle" fill="${poi.textColor}" paint-order="stroke" stroke="#ffffff" stroke-width="${halo.toFixed(3)}">${escapeXml(poi.text)}</text>\n`
-      : "") +
+    `    <path d="M ${x.toFixed(2)},${y.toFixed(2)} L ${(x - m * 0.42).toFixed(2)},${(y - m * 0.95).toFixed(2)} A ${(m * 0.52).toFixed(2)},${(m * 0.52).toFixed(2)} 0 1 1 ${(x + m * 0.42).toFixed(2)},${(y - m * 0.95).toFixed(2)} Z" fill="${poi.color}" stroke="#111" stroke-width="${(m * 0.04).toFixed(3)}"/>\n` +
+    `    <circle cx="${x.toFixed(2)}" cy="${(y - m * 1.05).toFixed(2)}" r="${(m * 0.16).toFixed(2)}" fill="#ffffff"/>\n` +
+    renderPoiLabel(poi, bounds, fontSize, 600) +
     `  </g>\n`
   );
 };
 
 const renderPoiDot = (poi: Poi, x: number, y: number, s: number): string => {
-  const r = s * 0.20;
+  const r = s * 0.20 * poi.markerScale;
   const fontSize = s * 0.36;
-  const halo = fontSize * 0.16;
+  const bounds = { top: y - r, bottom: y + r, left: x - r, right: x + r };
   return (
     `  <g class="poi poi-dot" data-id="${poi.id}" style="cursor:move">\n` +
     `    <circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}" fill="${poi.color}" stroke="#111" stroke-width="${(s * 0.03).toFixed(3)}"/>\n` +
-    (poi.text
-      ? `    <text x="${(x + r + s * 0.12).toFixed(2)}" y="${(y + fontSize * 0.35).toFixed(2)}" font-size="${fontSize.toFixed(2)}" font-family="Helvetica, Arial, sans-serif" fill="${poi.textColor}" paint-order="stroke" stroke="#ffffff" stroke-width="${halo.toFixed(3)}">${escapeXml(poi.text)}</text>\n`
-      : "") +
+    renderPoiLabel(poi, bounds, fontSize, 500) +
     `  </g>\n`
   );
 };
 
 const renderPoiBubble = (poi: Poi, x: number, y: number, s: number): string => {
+  const ms = s * poi.markerScale;
   const fontSize = s * 0.4;
-  const padX = s * 0.28;
-  const padY = s * 0.22;
+  const padX = ms * 0.28;
+  const padY = ms * 0.22;
   const textW =
     Math.max(1, poi.text.length) * fontSize * 0.55 + padX * 2;
   const textH = fontSize + padY * 2;
-  const tailH = s * 0.32;
+  const tailH = ms * 0.32;
   const bx = x - textW / 2;
   const by = y - textH - tailH;
-  const r = Math.min(textH * 0.35, s * 0.18);
-  const tailW = s * 0.28;
+  const r = Math.min(textH * 0.35, ms * 0.18);
+  const tailW = ms * 0.28;
   const path =
     `M ${(bx + r).toFixed(2)},${by.toFixed(2)} ` +
     `H ${(bx + textW - r).toFixed(2)} ` +
@@ -1704,7 +2044,7 @@ const renderPoiBubble = (poi: Poi, x: number, y: number, s: number): string => {
     `A ${r.toFixed(2)},${r.toFixed(2)} 0 0 1 ${(bx + r).toFixed(2)},${by.toFixed(2)} Z`;
   return (
     `  <g class="poi poi-bubble" data-id="${poi.id}" style="cursor:move">\n` +
-    `    <path d="${path}" fill="${poi.color}" stroke="#111" stroke-width="${(s * 0.04).toFixed(3)}"/>\n` +
+    `    <path d="${path}" fill="${poi.color}" stroke="#111" stroke-width="${(ms * 0.04).toFixed(3)}"/>\n` +
     (poi.text
       ? `    <text x="${x.toFixed(2)}" y="${(by + textH / 2 + fontSize * 0.34).toFixed(2)}" font-size="${fontSize.toFixed(2)}" font-family="Helvetica, Arial, sans-serif" font-weight="500" text-anchor="middle" fill="${poi.textColor}">${escapeXml(poi.text)}</text>\n`
       : "") +
@@ -1719,35 +2059,37 @@ const renderPoiNumbered = (
   s: number,
   index: number,
 ): string => {
-  const r = s * 0.42;
-  const fontSize = s * 0.46;
+  const r = s * 0.42 * poi.markerScale;
+  const numberSize = r * 1.1; // number sized to fit inside the scaled circle
   const labelSize = s * 0.32;
-  const halo = labelSize * 0.18;
+  const bounds = { top: y - r, bottom: y + r, left: x - r, right: x + r };
   return (
     `  <g class="poi poi-numbered" data-id="${poi.id}" style="cursor:move">\n` +
     `    <circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}" fill="${poi.color}" stroke="#111" stroke-width="${(s * 0.05).toFixed(3)}"/>\n` +
-    `    <text x="${x.toFixed(2)}" y="${(y + fontSize * 0.33).toFixed(2)}" font-size="${fontSize.toFixed(2)}" font-family="Helvetica, Arial, sans-serif" font-weight="700" text-anchor="middle" fill="${poi.textColor}">${index}</text>\n` +
-    (poi.text
-      ? `    <text x="${(x + r + s * 0.15).toFixed(2)}" y="${(y + labelSize * 0.35).toFixed(2)}" font-size="${labelSize.toFixed(2)}" font-family="Helvetica, Arial, sans-serif" font-weight="500" fill="${poi.textColor}" paint-order="stroke" stroke="#ffffff" stroke-width="${halo.toFixed(3)}">${escapeXml(poi.text)}</text>\n`
-      : "") +
+    `    <text x="${x.toFixed(2)}" y="${(y + numberSize * 0.33).toFixed(2)}" font-size="${numberSize.toFixed(2)}" font-family="Helvetica, Arial, sans-serif" font-weight="700" text-anchor="middle" fill="${poi.textColor}">${index}</text>\n` +
+    renderPoiLabel(poi, bounds, labelSize, 500) +
     `  </g>\n`
   );
 };
 
 const renderPoiFlag = (poi: Poi, x: number, y: number, s: number): string => {
-  const poleH = s * 1.0;
-  const flagW = s * 0.65;
-  const flagH = s * 0.42;
+  const ms = s * poi.markerScale;
+  const poleH = ms * 1.0;
+  const flagW = ms * 0.65;
+  const flagH = ms * 0.42;
   const fontSize = s * 0.36;
-  const halo = fontSize * 0.18;
   const top = y - poleH;
+  const bounds = {
+    top,
+    bottom: y,
+    left: x,
+    right: x + flagW,
+  };
   return (
     `  <g class="poi poi-flag" data-id="${poi.id}" style="cursor:move">\n` +
-    `    <line x1="${x.toFixed(2)}" y1="${y.toFixed(2)}" x2="${x.toFixed(2)}" y2="${top.toFixed(2)}" stroke="#111" stroke-width="${(s * 0.06).toFixed(3)}" stroke-linecap="round"/>\n` +
-    `    <path d="M ${x.toFixed(2)},${top.toFixed(2)} L ${(x + flagW).toFixed(2)},${(top + flagH * 0.25).toFixed(2)} L ${x.toFixed(2)},${(top + flagH).toFixed(2)} Z" fill="${poi.color}" stroke="#111" stroke-width="${(s * 0.04).toFixed(3)}" stroke-linejoin="round"/>\n` +
-    (poi.text
-      ? `    <text x="${(x + flagW + s * 0.1).toFixed(2)}" y="${(top + flagH * 0.5 + fontSize * 0.35).toFixed(2)}" font-size="${fontSize.toFixed(2)}" font-family="Helvetica, Arial, sans-serif" font-weight="500" fill="${poi.textColor}" paint-order="stroke" stroke="#ffffff" stroke-width="${halo.toFixed(3)}">${escapeXml(poi.text)}</text>\n`
-      : "") +
+    `    <line x1="${x.toFixed(2)}" y1="${y.toFixed(2)}" x2="${x.toFixed(2)}" y2="${top.toFixed(2)}" stroke="#111" stroke-width="${(ms * 0.06).toFixed(3)}" stroke-linecap="round"/>\n` +
+    `    <path d="M ${x.toFixed(2)},${top.toFixed(2)} L ${(x + flagW).toFixed(2)},${(top + flagH * 0.25).toFixed(2)} L ${x.toFixed(2)},${(top + flagH).toFixed(2)} Z" fill="${poi.color}" stroke="#111" stroke-width="${(ms * 0.04).toFixed(3)}" stroke-linejoin="round"/>\n` +
+    renderPoiLabel(poi, bounds, fontSize, 500) +
     `  </g>\n`
   );
 };
@@ -1852,6 +2194,21 @@ const renderGraticule = (
 };
 
 // -- Theme leading color (used by the cross + marker) ----------------------
+
+/** Extract the theme's background color from `.background { fill: … }`. Used
+ *  as the default canvas-bg so the print's outer paper matches the theme. */
+const themeBackgroundColor = (css: string): string => {
+  const m = css.match(
+    /\.background\s*\{[^}]*?\bfill\s*:\s*([^;}\s!]+)/i,
+  );
+  if (m) {
+    const v = m[1].trim();
+    if (v && v !== "none" && v !== "inherit" && v !== "currentColor") {
+      return v;
+    }
+  }
+  return "#fafafa";
+};
 
 /** Extract a representative stroke color from the active CSS — used so the
  *  lat/lng cross + marker tonally match the theme without a manual picker. */
@@ -2173,6 +2530,13 @@ let lastComposedUrl: string | null = null;
 /** Compute the map's pixel-mm placement inside the canvas given the frame. */
 const computeMapPlacement = (cw: number, ch: number, aspect: number) => {
   const f = currentFrame();
+  if (f.id === "freeform") {
+    const mw = Math.max(1, parseFloat(freeformWInput.value) || 1);
+    const mh = Math.max(1, parseFloat(freeformHInput.value) || 1);
+    const mx = parseFloat(freeformXInput.value) || 0;
+    const my = parseFloat(freeformYInput.value) || 0;
+    return { mx, my, mw, mh };
+  }
   const usingFrame = currentCanvas().id !== "match";
   const mt = usingFrame ? ch * f.marginTop : 0;
   const mb = usingFrame ? ch * f.marginBottom : 0;
@@ -2193,8 +2557,54 @@ const computeMapPlacement = (cw: number, ch: number, aspect: number) => {
   return { mx, my, mw, mh };
 };
 
-/** Build the final SVG: outer canvas (mm) + nested map svg + overlays. */
-const composeSvg = (): string | null => {
+/** Freeform-mode resize/move handles. Rendered into the preview SVG only. */
+const renderFreeformHandles = (
+  mx: number, my: number, mw: number, mh: number, minDim: number,
+): string => {
+  const r = Math.max(2, minDim * 0.011);
+  const sw = Math.max(0.3, r * 0.16).toFixed(2);
+  const dash = `${(r * 1.6).toFixed(2)} ${(r * 1.2).toFixed(2)}`;
+  type H = { id: string; cx: number; cy: number; cursor: string };
+  const handles: H[] = [
+    { id: "nw", cx: mx,        cy: my,        cursor: "nwse-resize" },
+    { id: "n",  cx: mx + mw/2, cy: my,        cursor: "ns-resize"   },
+    { id: "ne", cx: mx + mw,   cy: my,        cursor: "nesw-resize" },
+    { id: "e",  cx: mx + mw,   cy: my + mh/2, cursor: "ew-resize"   },
+    { id: "se", cx: mx + mw,   cy: my + mh,   cursor: "nwse-resize" },
+    { id: "s",  cx: mx + mw/2, cy: my + mh,   cursor: "ns-resize"   },
+    { id: "sw", cx: mx,        cy: my + mh,   cursor: "nesw-resize" },
+    { id: "w",  cx: mx,        cy: my + mh/2, cursor: "ew-resize"   },
+  ];
+  let out = `  <g class="freeform-handles">\n`;
+  // Outline of the freeform map area.
+  out +=
+    `    <rect x="${mx.toFixed(2)}" y="${my.toFixed(2)}" ` +
+    `width="${mw.toFixed(2)}" height="${mh.toFixed(2)}" fill="none" ` +
+    `stroke="#4ea4ff" stroke-width="${sw}" stroke-dasharray="${dash}" ` +
+    `pointer-events="none"/>\n`;
+  // Center move grip.
+  const gripR = r * 1.4;
+  out +=
+    `    <rect data-handle="move" ` +
+    `x="${(mx + mw/2 - gripR).toFixed(2)}" y="${(my + mh/2 - gripR).toFixed(2)}" ` +
+    `width="${(gripR * 2).toFixed(2)}" height="${(gripR * 2).toFixed(2)}" ` +
+    `rx="${(gripR * 0.4).toFixed(2)}" fill="#4ea4ff" fill-opacity="0.55" ` +
+    `stroke="#ffffff" stroke-width="${sw}" style="cursor:move"/>\n`;
+  for (const h of handles) {
+    out +=
+      `    <rect data-handle="${h.id}" ` +
+      `x="${(h.cx - r).toFixed(2)}" y="${(h.cy - r).toFixed(2)}" ` +
+      `width="${(r * 2).toFixed(2)}" height="${(r * 2).toFixed(2)}" ` +
+      `fill="#4ea4ff" stroke="#ffffff" stroke-width="${sw}" ` +
+      `style="cursor:${h.cursor}"/>\n`;
+  }
+  out += `  </g>\n`;
+  return out;
+};
+
+/** Build the final SVG: outer canvas (mm) + nested map svg + overlays.
+ *  When `forExport` is true, preview-only chrome (freeform handles) is omitted. */
+const composeSvg = (forExport = false): string | null => {
   if (!lastMapSvg) return null;
   const aspect = lastMapAspect ?? 1;
   const { w: cw, h: ch } = canvasDims(aspect);
@@ -2231,7 +2641,9 @@ const composeSvg = (): string | null => {
     })
     .join("\n  ");
 
-  const canvasBg = frame.canvasBg ?? "#fafafa";
+  const canvasBg = canvasBgOverrideToggle.checked
+    ? canvasBgColorInput.value
+    : (frame.canvasBg ?? themeBackgroundColor(cssEditor.value));
   const minDim = Math.min(cw, ch);
   let defs = "";
   let mapAttrs = "";
@@ -2240,9 +2652,10 @@ const composeSvg = (): string | null => {
     const d = (minDim * 0.005).toFixed(3);
     defs = `<defs><filter id="map-shadow" x="-3%" y="-3%" width="106%" height="106%"><feDropShadow dx="0" dy="${d}" stdDeviation="${d}" flood-opacity="0.22"/></filter></defs>`;
     mapAttrs = ` filter="url(#map-shadow)"`;
-  } else if (frame.decoration === "border") {
-    const sw = Math.max(0.3, minDim * 0.0015);
-    borderRect = `  <rect x="${mx}" y="${my}" width="${mw}" height="${mh}" fill="none" stroke="#222" stroke-width="${sw}"/>\n`;
+  }
+  if (borderToggle.checked) {
+    const sw = Math.max(0.05, parseFloat(borderWidthInput.value) || 0.5);
+    borderRect = `  <rect x="${mx.toFixed(2)}" y="${my.toFixed(2)}" width="${mw.toFixed(2)}" height="${mh.toFixed(2)}" fill="none" stroke="${borderColorInput.value}" stroke-width="${sw}"/>\n`;
   }
 
   let infoStripXml = "";
@@ -2265,15 +2678,15 @@ const composeSvg = (): string | null => {
         dims += `   ·   1:${formatScaleRatio(ratio)}`;
       }
     }
-    const stripTop = my + mh;
-    const stripH = Math.max(0.01, ch - stripTop);
-    const cxText = cw / 2;
-    const y1 = stripTop + stripH * 0.42;
-    const y2 = stripTop + stripH * 0.74;
     const fs1 = minDim * 0.022;
     const fs2 = minDim * 0.018;
+    const cxText = cw * atlasInfoXFrac;
+    const cyText = ch * atlasInfoYFrac;
+    // Line 1 above the anchor point, line 2 below.
+    const y1 = cyText - fs2 * 0.5;
+    const y2 = cyText + fs1 * 0.8;
     infoStripXml =
-      `  <g class="info-strip" font-family="'Courier New', ui-monospace, monospace" fill="#3a3424" text-anchor="middle" style="pointer-events:none">\n` +
+      `  <g class="info-strip" font-family="'Courier New', ui-monospace, monospace" fill="#3a3424" text-anchor="middle" style="cursor:move">\n` +
       `    <text x="${cxText.toFixed(2)}" y="${y1.toFixed(2)}" font-size="${fs1.toFixed(2)}" letter-spacing="0.08em">${escapeXml(coords)}</text>\n` +
       `    <text x="${cxText.toFixed(2)}" y="${y2.toFixed(2)}" font-size="${fs2.toFixed(2)}" letter-spacing="0.12em">${escapeXml(dims)}</text>\n` +
       `  </g>\n`;
@@ -2335,18 +2748,46 @@ const composeSvg = (): string | null => {
     }
   }
 
+  // Picker bearing rotates the displayed map; the bbox+content stay north-up
+  // (Mercator projection unchanged). The map content is clipped back to the
+  // original rectangle so it doesn't bleed into the canvas margins.
+  const bearing = map.getBearing();
+  let rotationDefs = "";
+  let rotationOpen = "";
+  let rotationClose = "";
+  if (Math.abs(bearing) > 0.01) {
+    rotationDefs =
+      `<clipPath id="map-rotate-clip"><rect x="${mx.toFixed(2)}" y="${my.toFixed(2)}" width="${mw.toFixed(2)}" height="${mh.toFixed(2)}"/></clipPath>`;
+    rotationOpen =
+      `  <g clip-path="url(#map-rotate-clip)">\n` +
+      `  <g transform="rotate(${(-bearing).toFixed(2)} ${(mx + mw / 2).toFixed(2)} ${(my + mh / 2).toFixed(2)})">\n`;
+    rotationClose = `  </g>\n  </g>\n`;
+  }
+  defs = defs
+    ? defs.replace("</defs>", rotationDefs + "</defs>")
+    : rotationDefs
+      ? `<defs>${rotationDefs}</defs>`
+      : "";
+
+  // Map content + everything anchored by lat/lng (graticule, cross, POIs)
+  // rotates together. Anything anchored to the canvas (border, scale bar,
+  // attribution, info strip, overlays) stays axis-aligned.
+  const mapBlock =
+    `  <svg xmlns="http://www.w3.org/2000/svg" x="${mx}" y="${my}" width="${mw}" height="${mh}" viewBox="${mapVb}" preserveAspectRatio="xMidYMid meet"${mapAttrs}>\n` +
+    mapInner +
+    `  </svg>\n`;
+  const latLngAnchored = mapBlock + graticuleXml + crossXml + poiXml;
+  const wrappedLatLng = rotationOpen
+    ? rotationOpen + latLngAnchored + rotationClose
+    : latLngAnchored;
+
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" ` +
     `viewBox="0 0 ${cw} ${ch}" width="${cw}mm" height="${ch}mm">\n` +
     (defs ? `  ${defs}\n` : "") +
     `  <rect class="canvas-bg" width="${cw}" height="${ch}" fill="${canvasBg}"/>\n` +
-    `  <svg x="${mx}" y="${my}" width="${mw}" height="${mh}" viewBox="${mapVb}" preserveAspectRatio="xMidYMid meet"${mapAttrs}>\n` +
-    mapInner +
-    `  </svg>\n` +
-    graticuleXml +
-    crossXml +
+    wrappedLatLng +
     borderRect +
-    poiXml +
     infoStripXml +
     (scalebarToggle.checked
       ? renderScaleBar(
@@ -2361,6 +2802,9 @@ const composeSvg = (): string | null => {
       : "") +
     (overlaysXml ? `  ${overlaysXml}\n` : "") +
     renderAttribution(cw, ch, minDim, attribCornerSelect.value) +
+    (!forExport && currentFrame().id === "freeform"
+      ? renderFreeformHandles(mx, my, mw, mh, minDim)
+      : "") +
     `</svg>\n`
   );
 };
@@ -2384,6 +2828,8 @@ const recompose = () => {
   downloadPngBtn.disabled = false;
   bindOverlayDragHandlers();
   bindPoiDragHandlers();
+  bindAtlasInfoDrag();
+  bindFreeformHandles();
 };
 
 // -- Overlay drag on preview SVG ---------------------------------------------
@@ -2439,6 +2885,7 @@ const bindOverlayDragHandlers = () => {
         selectedIds.add(id);
       }
       syncSelectionVisuals();
+      snapshot();
 
       const origins = new Map<string, { x: number; y: number }>();
       for (const sid of selectedIds) {
@@ -2519,6 +2966,134 @@ const bindOverlayDragHandlers = () => {
   });
 };
 
+// -- Freeform map area resize/move ------------------------------------------
+
+const bindFreeformHandles = () => {
+  if (currentFrame().id !== "freeform") return;
+  const svg0 = previewEl.querySelector<SVGSVGElement>("svg");
+  if (!svg0) return;
+  svg0.querySelectorAll<SVGRectElement>("[data-handle]").forEach((h) => {
+    const handleId = h.dataset.handle!;
+
+    h.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      // Read initial SVG point + bounds at pointerdown.
+      const start = toSvgPoint(svg0, e.clientX, e.clientY);
+      const sX = parseFloat(freeformXInput.value) || 0;
+      const sY = parseFloat(freeformYInput.value) || 0;
+      const sW = parseFloat(freeformWInput.value) || 1;
+      const sH = parseFloat(freeformHInput.value) || 1;
+
+      let raf: number | null = null;
+      let pX = sX, pY = sY, pW = sW, pH = sH;
+
+      const flush = () => {
+        freeformXInput.value = pX.toFixed(2);
+        freeformYInput.value = pY.toFixed(2);
+        freeformWInput.value = pW.toFixed(2);
+        freeformHInput.value = pH.toFixed(2);
+        recompose();
+        raf = null;
+      };
+
+      const onMove = (ev: PointerEvent) => {
+        // Recompose replaces the SVG element each frame, so re-query
+        // every move to avoid using a detached node.
+        const svg = previewEl.querySelector<SVGSVGElement>("svg");
+        if (!svg) return;
+        const p = toSvgPoint(svg, ev.clientX, ev.clientY);
+        const dx = p.x - start.x;
+        const dy = p.y - start.y;
+        let nx = sX, ny = sY, nw = sW, nh = sH;
+        switch (handleId) {
+          case "move": nx = sX + dx; ny = sY + dy; break;
+          case "nw": nx = sX + dx; ny = sY + dy; nw = sW - dx; nh = sH - dy; break;
+          case "n":                  ny = sY + dy;              nh = sH - dy; break;
+          case "ne":                  ny = sY + dy; nw = sW + dx; nh = sH - dy; break;
+          case "e":                                 nw = sW + dx;              break;
+          case "se":                                 nw = sW + dx; nh = sH + dy; break;
+          case "s":                                                nh = sH + dy; break;
+          case "sw": nx = sX + dx;                  nw = sW - dx; nh = sH + dy; break;
+          case "w":  nx = sX + dx;                  nw = sW - dx;              break;
+        }
+        if (nw < 10) { nw = 10; if (handleId.includes("w")) nx = sX + sW - 10; }
+        if (nh < 10) { nh = 10; if (handleId.includes("n")) ny = sY + sH - 10; }
+        pX = nx; pY = ny; pW = nw; pH = nh;
+        if (raf === null) raf = requestAnimationFrame(flush);
+      };
+
+      const onUp = () => {
+        if (raf !== null) {
+          cancelAnimationFrame(raf);
+          flush();
+        }
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+      };
+
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    });
+  });
+};
+
+// -- Atlas info-strip drag --------------------------------------------------
+
+const bindAtlasInfoDrag = () => {
+  const svg = previewEl.querySelector<SVGSVGElement>("svg");
+  if (!svg) return;
+  const strip = svg.querySelector<SVGGElement>("g.info-strip");
+  if (!strip) return;
+
+  let startSvg: { x: number; y: number } | null = null;
+  let startX = 0;
+  let startY = 0;
+
+  strip.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    startSvg = toSvgPoint(svg, e.clientX, e.clientY);
+    startX = atlasInfoXFrac;
+    startY = atlasInfoYFrac;
+    try {
+      strip.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  });
+
+  strip.addEventListener("pointermove", (e) => {
+    if (!startSvg) return;
+    const p = toSvgPoint(svg, e.clientX, e.clientY);
+    const dx = p.x - startSvg.x;
+    const dy = p.y - startSvg.y;
+    strip.setAttribute("transform", `translate(${dx} ${dy})`);
+  });
+
+  const end = (e: PointerEvent) => {
+    if (!startSvg) return;
+    const p = toSvgPoint(svg, e.clientX, e.clientY);
+    const dx = p.x - startSvg.x;
+    const dy = p.y - startSvg.y;
+    startSvg = null;
+    try {
+      strip.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    const aspect = lastMapAspect ?? 1;
+    const { w: cw, h: ch } = canvasDims(aspect);
+    atlasInfoXFrac = Math.max(0, Math.min(1, startX + dx / cw));
+    atlasInfoYFrac = Math.max(0, Math.min(1, startY + dy / ch));
+    recompose();
+  };
+  strip.addEventListener("pointerup", end);
+  strip.addEventListener("pointercancel", end);
+};
+
 // -- POI drag in preview SVG ------------------------------------------------
 
 const bindPoiDragHandlers = () => {
@@ -2537,6 +3112,7 @@ const bindPoiDragHandlers = () => {
     g.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
       e.preventDefault();
+      snapshot();
       startSvg = toSvgPoint(svg, e.clientX, e.clientY);
       startLat = poi.lat;
       startLng = poi.lng;
@@ -2651,6 +3227,8 @@ const render = async () => {
     mapPaneEl
       .querySelector<HTMLButtonElement>('.tab[data-map-tab="preview"]')
       ?.click();
+    // Reverse-geocode in the background so "+ Add text" can suggest a title.
+    void fetchSuggestedTitle();
   } catch (err) {
     console.error(err);
     setStatus(err instanceof Error ? err.message : String(err), "error");
@@ -2695,15 +3273,20 @@ const exportFilename = (ext: string): string => {
 };
 
 const download = () => {
-  if (!lastComposedUrl) return;
+  const composed = composeSvg(true);
+  if (!composed) return;
+  const url = URL.createObjectURL(
+    new Blob([composed], { type: "image/svg+xml" }),
+  );
   const a = document.createElement("a");
-  a.href = lastComposedUrl;
+  a.href = url;
   a.download = exportFilename("svg");
   a.click();
+  URL.revokeObjectURL(url);
 };
 
 const downloadPng = async () => {
-  const composed = composeSvg();
+  const composed = composeSvg(true);
   if (!composed) return;
   const dpi = Math.max(36, parseFloat(dpiInput.value) || 300);
   const aspect = lastMapAspect ?? 1;
@@ -2726,6 +3309,13 @@ const downloadPng = async () => {
     canvas.height = heightPx;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("no 2d context");
+    // Paint a solid background first so the PNG is never transparent even if
+    // the SVG's <rect class="canvas-bg"> doesn't rasterize for some reason.
+    const f = currentFrame();
+    ctx.fillStyle = canvasBgOverrideToggle.checked
+      ? canvasBgColorInput.value
+      : (f.canvasBg ?? themeBackgroundColor(cssEditor.value));
+    ctx.fillRect(0, 0, widthPx, heightPx);
     ctx.drawImage(img, 0, 0, widthPx, heightPx);
 
     const blob = await new Promise<Blob>((resolve, reject) => {
@@ -2824,6 +3414,10 @@ type SavedProject = {
     x: number;
     y: number;
   };
+  border?: { enabled: boolean; color: string; width: number };
+  freeform?: { x: number; y: number; w: number; h: number };
+  atlasInfo?: { xFrac: number; yFrac: number };
+  canvasBg?: { override: boolean; color: string };
   hiddenLayerKeys: string[];
   frame: string;
   overlays: Overlay[];
@@ -2871,6 +3465,22 @@ const saveProject = () => {
       segments: parseFloat(scalebarSegmentsInput.value) || 4,
       x: parseFloat(scalebarXInput.value) || 0.08,
       y: parseFloat(scalebarYInput.value) || 0.92,
+    },
+    border: {
+      enabled: borderToggle.checked,
+      color: borderColorInput.value,
+      width: parseFloat(borderWidthInput.value) || 0.5,
+    },
+    freeform: {
+      x: parseFloat(freeformXInput.value) || 20,
+      y: parseFloat(freeformYInput.value) || 20,
+      w: parseFloat(freeformWInput.value) || 180,
+      h: parseFloat(freeformHInput.value) || 180,
+    },
+    atlasInfo: { xFrac: atlasInfoXFrac, yFrac: atlasInfoYFrac },
+    canvasBg: {
+      override: canvasBgOverrideToggle.checked,
+      color: canvasBgColorInput.value,
     },
     hiddenLayerKeys: Array.from(layerCheckboxes())
       .filter((cb) => !cb.checked)
@@ -2931,6 +3541,26 @@ const applyProject = (p: SavedProject) => {
     scalebarXInput.value = String(p.scalebar.x);
     scalebarYInput.value = String(p.scalebar.y);
   }
+  if (p.border) {
+    borderToggle.checked = p.border.enabled;
+    borderColorInput.value = p.border.color;
+    borderWidthInput.value = String(p.border.width);
+  }
+  if (p.freeform) {
+    freeformXInput.value = String(p.freeform.x);
+    freeformYInput.value = String(p.freeform.y);
+    freeformWInput.value = String(p.freeform.w);
+    freeformHInput.value = String(p.freeform.h);
+  }
+  if (p.atlasInfo) {
+    atlasInfoXFrac = p.atlasInfo.xFrac;
+    atlasInfoYFrac = p.atlasInfo.yFrac;
+  }
+  if (p.canvasBg) {
+    canvasBgOverrideToggle.checked = p.canvasBg.override;
+    canvasBgColorInput.value = p.canvasBg.color;
+  }
+  freeformControls.hidden = currentFrame().id !== "freeform";
   const hiddenSet = new Set(p.hiddenLayerKeys ?? []);
   for (const cb of layerCheckboxes()) {
     cb.checked = !hiddenSet.has(cb.dataset.layer!);
@@ -2954,7 +3584,14 @@ const applyProject = (p: SavedProject) => {
 
   pois.length = 0;
   for (const x of p.pois ?? []) {
-    pois.push({ ...x, textColor: x.textColor ?? "#1a1a1a" });
+    pois.push({
+      ...x,
+      textColor: x.textColor ?? "#1a1a1a",
+      markerScale: x.markerScale ?? 1,
+      textBg: x.textBg ?? false,
+      textBgColor: x.textBgColor ?? "#ffffff",
+      textPosition: x.textPosition ?? "bottom",
+    });
   }
   renderPoiList();
 
@@ -2991,15 +3628,20 @@ loadProjectFile.addEventListener("change", async () => {
   }
 });
 
-cssEditor.addEventListener("keydown", (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-    e.preventDefault();
-    void render();
+// CodeMirror handles Ctrl/Cmd+Enter via keymap and triggers recompose via its
+// updateListener — both configured at editor creation.
+
+// Ctrl/Cmd+Z = undo; Ctrl+Shift+Z or Ctrl+Y = redo. Skip when an input is focused.
+document.addEventListener("keydown", (e) => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod) return;
+  const a = document.activeElement;
+  if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT")) {
+    return;
   }
-});
-// Keep the cross color in sync when CSS edits change the leading stroke.
-cssEditor.addEventListener("input", () => {
-  if (crossToggle.checked) recompose();
+  const key = e.key.toLowerCase();
+  if (key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if ((key === "z" && e.shiftKey) || key === "y") { e.preventDefault(); redo(); }
 });
 
 // Delete / Backspace removes selected overlays, unless an input is focused.
@@ -3011,6 +3653,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   e.preventDefault();
+  snapshot();
   for (const id of Array.from(selectedIds)) {
     const i = overlays.findIndex((o) => o.id === id);
     if (i >= 0) overlays.splice(i, 1);

@@ -10,27 +10,7 @@
     <header class="topbar">
       <h1>map2art</h1>
       <div class="toolbar">
-        <label>Theme
-          <select id="theme"></select>
-        </label>
-        <label>Proportion
-          <select id="paper"></select>
-        </label>
-        <span class="custom-paper-fields" id="custom-paper-fields" hidden>
-          <input id="custom-w" type="number" min="1" step="1" value="200" />
-          <span class="sep">×</span>
-          <input id="custom-h" type="number" min="1" step="1" value="200" />
-          <span class="unit">mm</span>
-        </span>
-        <button id="rotate-btn" type="button" title="Swap portrait / landscape">⟲</button>
-        <button id="lock-btn" type="button" title="Lock aspect ratio" class="locked">🔒</button>
-        <label>Width
-          <input id="width" type="number" min="200" max="8000" step="50" value="2000" />
-        </label>
-        <button id="reset-rect-btn" type="button" title="Reset selection rectangle to map view">Reset rect</button>
         <button id="render-btn" type="button">Render</button>
-        <button id="save-css-btn" type="button">Save CSS</button>
-        <label>DPI <input id="dpi" type="number" min="72" max="600" step="50" value="300" /></label>
         <button id="download-btn" type="button" disabled>Download SVG</button>
         <button id="download-png-btn" type="button" disabled>Download PNG</button>
         <span class="toolbar-sep"></span>
@@ -84,17 +64,74 @@
       <div class="pane-splitter" id="pane-splitter" title="Drag to resize · double-click to reset"></div>
       <section class="pane pane-settings">
         <nav class="tabs">
-          <button class="tab active" data-settings-tab="frame" type="button">Frame</button>
+          <button class="tab active" data-settings-tab="style" type="button">Style</button>
+          <button class="tab" data-settings-tab="frame" type="button">Frame</button>
           <button class="tab" data-settings-tab="poi" type="button">POI</button>
           <button class="tab" data-settings-tab="coords" type="button">Coords</button>
           <button class="tab" data-settings-tab="layers" type="button">Layers</button>
           <button class="tab" data-settings-tab="css" type="button">CSS</button>
         </nav>
-        <div class="tab-pane settings-pane" data-settings-tab="frame">
+        <div class="tab-pane settings-pane" data-settings-tab="style">
+          <div class="style-panel">
+            <h3>Map theme</h3>
+            <select id="theme" class="full-width"></select>
+
+            <h3>Map proportion</h3>
+            <div class="style-row">
+              <select id="paper"></select>
+              <button id="rotate-btn" type="button" title="Swap portrait / landscape">⟲</button>
+              <button id="lock-btn" type="button" title="Lock aspect ratio" class="locked">🔒</button>
+            </div>
+            <span class="custom-paper-fields" id="custom-paper-fields" hidden>
+              <input id="custom-w" type="number" min="1" step="1" value="200" />
+              <span class="sep">×</span>
+              <input id="custom-h" type="number" min="1" step="1" value="200" />
+              <span class="unit">mm</span>
+            </span>
+            <button id="reset-rect-btn" type="button" class="full-width" title="Reset selection rectangle to map view">Reset map proportion</button>
+
+            <h3>Output</h3>
+            <div class="coords-grid">
+              <label>Width (px) <input id="width" type="number" min="200" max="8000" step="50" value="2000" /></label>
+              <label>DPI <input id="dpi" type="number" min="72" max="600" step="50" value="300" /></label>
+            </div>
+
+            <h3>Canvas background</h3>
+            <label class="check-label">
+              <input id="canvas-bg-override-toggle" type="checkbox" />
+              Use custom canvas color
+            </label>
+            <div class="coords-grid">
+              <label>Color <input id="canvas-bg-color" type="color" value="#fafafa" /></label>
+            </div>
+            <p class="overlays-hint">When the toggle is off, the canvas uses the theme's <code>.background</code> color (or the frame's preferred color if it has one).</p>
+          </div>
+        </div>
+        <div class="tab-pane settings-pane" data-settings-tab="frame" hidden>
           <div class="frame-panel">
             <h3>Map frame</h3>
             <ul class="frame-options" id="frame-options"></ul>
             <p class="overlays-hint">The frame controls how the map sits inside the canvas. Templates in the Editor tab are positioned relative to the map, so they sit nicely in whatever margin space the frame creates.</p>
+
+            <div id="freeform-controls" hidden>
+              <h3>Freeform map placement (mm)</h3>
+              <div class="coords-grid">
+                <label>X <input id="freeform-x" type="number" step="1" value="20" /></label>
+                <label>Y <input id="freeform-y" type="number" step="1" value="20" /></label>
+              </div>
+              <div class="coords-grid">
+                <label>Width <input id="freeform-w" type="number" step="1" value="180" /></label>
+                <label>Height <input id="freeform-h" type="number" step="1" value="180" /></label>
+              </div>
+              <p class="overlays-hint">Position and size of the map inside the canvas, in millimetres. Map content fits the rectangle with letterboxing if the aspect ratios don't match.</p>
+            </div>
+
+            <h3>Map border</h3>
+            <label class="check-label"><input id="border-toggle" type="checkbox" /> Show border around the map</label>
+            <div class="coords-grid">
+              <label>Color <input id="border-color" type="color" value="#222222" /></label>
+              <label>Width (mm) <input id="border-width" type="number" step="0.1" min="0.1" value="0.5" /></label>
+            </div>
 
             <h3>Attribution</h3>
             <label class="check-label">
@@ -206,7 +243,11 @@
           </div>
         </div>
         <div class="tab-pane settings-pane" data-settings-tab="css" hidden>
-          <textarea id="css-editor" spellcheck="false"></textarea>
+          <div class="css-toolbar">
+            <button id="save-css-btn" type="button">Save CSS</button>
+            <span class="overlays-hint">Persists the editor contents to <code>styles.css</code> on the server.</span>
+          </div>
+          <div id="css-editor"></div>
         </div>
       </section>
     </main>
