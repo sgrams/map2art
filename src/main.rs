@@ -91,9 +91,15 @@ struct RenderRequest {
     /// circle on a square bbox.
     #[serde(default)]
     shape: Option<String>,
-    /// Whether to emit place names and street-name labels.
+    /// Whether to emit street labels (textPath along road centerlines).
     #[serde(default)]
-    labels: Option<bool>,
+    street_labels: Option<bool>,
+    /// Whether to emit place names (city / town / village / ...).
+    #[serde(default)]
+    place_labels: Option<bool>,
+    /// Whether to emit named water-body labels.
+    #[serde(default)]
+    water_labels: Option<bool>,
     /// Backend layer names to omit from the render (e.g. "building", "rail",
     /// "water"). Empty = render everything.
     #[serde(default)]
@@ -129,7 +135,9 @@ async fn post_render(
         state.styles.read().await.clone()
     };
     let shape = body.shape.as_deref().unwrap_or("rect");
-    let labels = body.labels.unwrap_or(false);
+    let street_labels = body.street_labels.unwrap_or(false);
+    let place_labels = body.place_labels.unwrap_or(false);
+    let water_labels = body.water_labels.unwrap_or(false);
     let hidden: std::collections::HashSet<String> = body
         .hidden
         .clone()
@@ -142,7 +150,9 @@ async fn post_render(
         body.width.unwrap_or(2000.0),
         &css,
         shape,
-        labels,
+        street_labels,
+        place_labels,
+        water_labels,
         &hidden,
     );
 

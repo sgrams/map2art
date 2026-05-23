@@ -289,7 +289,9 @@ pub fn render_svg(
     canvas_width: f64,
     css: &str,
     shape: &str,
-    labels: bool,
+    street_labels: bool,
+    place_labels: bool,
+    water_labels: bool,
     hidden: &HashSet<String>,
 ) -> String {
     // ---- index ----
@@ -599,11 +601,8 @@ pub fn render_svg(
         writeln!(out, "</g>").unwrap();
     }
 
-    // ---- labels (street + place) ----
-    if labels {
-        // Street labels via textPath — only if roads layer is visible.
-        let road_labels_enabled = !hidden.contains("road");
-        if road_labels_enabled {
+    // ---- street labels (textPath along road centerlines) ----
+    if street_labels && !hidden.contains("road") {
         let labeled_kinds: &[&str] = &[
             "motorway",
             "trunk",
@@ -664,31 +663,129 @@ pub fn render_svg(
             }
             writeln!(out, "</g>").unwrap();
         }
+    }
+
+    // ---- water body features (deduped data block; frontend renders labels) ----
+    if water_labels {
+        // Collect all lng/lat points per unique name across way segments and
+        // relation outer members, plus classify each as sea / lake / river.
+        let mut groups: HashMap<String, (Vec<(f64, f64)>, &'static str)> = HashMap::new();
+        for el in &data.elements {
+            match el {
+                Element::Way { nodes: refs, tags, .. } => {
+                    let Some(name) = tags.get("name") else { continue };
+                    let water_tag = tags.get("water").map(String::as_str);
+                    let natural = tags.get("natural").map(String::as_str);
+                    let waterway = tags.get("waterway").is_some();
+                    let kind: &'static str = if waterway {
+                        "river"
+                    } else if natural == Some("water") {
+                        match water_tag {
+                            Some("sea") | Some("ocean") | Some("bay") | Some("strait") => "sea",
+                            _ => "lake",
+                        }
+                    } else {
+                        continue;
+                    };
+                    let pts: Vec<(f64, f64)> = refs
+                        .iter()
+                        .filter_map(|nid| nodes.get(nid).copied())
+                        .collect();
+                    if pts.is_empty() {
+                        continue;
+                    }
+                    groups
+                        .entry(name.clone())
+                        .or_insert_with(|| (Vec::new(), kind))
+                        .0
+                        .extend(pts);
+                }
+                Element::Relation { members, tags } => {
+                    if tags.get("type").map(String::as_str) != Some("multipolygon") {
+                        continue;
+                    }
+                    let natural = tags.get("natural").map(String::as_str);
+                    if natural != Some("water") {
+                        continue;
+                    }
+                    let Some(name) = tags.get("name") else { continue };
+                    let water_tag = tags.get("water").map(String::as_str);
+                    let kind: &'static str = match water_tag {
+                        Some("sea") | Some("ocean") | Some("bay") | Some("strait") => "sea",
+                        _ => "lake",
+                    };
+                    for m in members {
+                        if m.member_type != "way" {
+                            continue;
+                        }
+                        if !m.role.is_empty() && m.role != "outer" {
+                            continue;
+                        }
+                        if let Some(refs) = way_nodes.get(&m.ref_id) {
+                            let pts: Vec<(f64, f64)> = refs
+                                .iter()
+                                .filter_map(|nid| nodes.get(nid).copied())
+                                .collect();
+                            groups
+                                .entry(name.clone())
+                                .or_insert_with(|| (Vec::new(), kind))
+                                .0
+                                .extend(pts);
+                        }
+                    }
+                }
+                _ => {}
+            }
         }
 
-        // Place labels.
-        if !place_nodes.is_empty() {
-            place_nodes.sort_by_key(|(_, _, kind, _)| place_priority(kind));
-            writeln!(out, r#"<g class="layer layer-places">"#).unwrap();
-            for (lon, lat, kind, name) in &place_nodes {
-                if *lat < bbox.south
-                    || *lat > bbox.north
-                    || *lon < bbox.west
-                    || *lon > bbox.east
-                {
+        if !groups.is_empty() {
+            // Emit a hidden data block so the frontend can render labels
+            // client-side (and let users drag them).
+            writeln!(
+                out,
+                r#"<g class="layer-water-features-data" style="display:none">"#
+            )
+            .unwrap();
+            for (name, (pts, kind)) in &groups {
+                if pts.is_empty() {
                     continue;
                 }
-                let (x, y) = project(*lon, *lat);
-                let fs = place_size(width, kind);
+                let n = pts.len() as f64;
+                let cx = pts.iter().map(|p| p.0).sum::<f64>() / n;
+                let cy = pts.iter().map(|p| p.1).sum::<f64>() / n;
                 writeln!(
                     out,
-                    r#"  <text class="place place-{kind}" x="{x:.2}" y="{y:.2}" font-size="{fs:.2}" text-anchor="middle">{name}</text>"#,
+                    r#"  <text class="water-feature" data-name="{name}" data-kind="{kind}" data-lng="{cx:.6}" data-lat="{cy:.6}"></text>"#,
                     name = escape_xml(name),
                 )
                 .unwrap();
             }
             writeln!(out, "</g>").unwrap();
         }
+    }
+
+    // ---- place labels ----
+    if place_labels && !place_nodes.is_empty() {
+        place_nodes.sort_by_key(|(_, _, kind, _)| place_priority(kind));
+        writeln!(out, r#"<g class="layer layer-places">"#).unwrap();
+        for (lon, lat, kind, name) in &place_nodes {
+            if *lat < bbox.south
+                || *lat > bbox.north
+                || *lon < bbox.west
+                || *lon > bbox.east
+            {
+                continue;
+            }
+            let (x, y) = project(*lon, *lat);
+            let fs = place_size(width, kind);
+            writeln!(
+                out,
+                r#"  <text class="place place-{kind}" x="{x:.2}" y="{y:.2}" font-size="{fs:.2}" text-anchor="middle">{name}</text>"#,
+                name = escape_xml(name),
+            )
+            .unwrap();
+        }
+        writeln!(out, "</g>").unwrap();
     }
 
     if is_circle {
