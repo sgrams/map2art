@@ -1,0 +1,15 @@
+/target
+/frontend/node_modules
+/frontend/dist
+/frontend/tsconfig.tsbuildinfo
+
+# Auto-generated working stylesheet (created from themes/default.css on first run).
+/styles.css
+
+# User templates persisted in localStorage are not in-tree; user project saves are user files.
+*.map2art-project.json
+
+# Editor / tool state
+/.claude
+/.idea
+/.vscode
