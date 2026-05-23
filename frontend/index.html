@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>map2art</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>map2art</h1>
+      <div class="toolbar">
+        <label>Theme
+          <select id="theme"></select>
+        </label>
+        <label>Proportion
+          <select id="paper"></select>
+        </label>
+        <span class="custom-paper-fields" id="custom-paper-fields" hidden>
+          <input id="custom-w" type="number" min="1" step="1" value="200" />
+          <span class="sep">×</span>
+          <input id="custom-h" type="number" min="1" step="1" value="200" />
+          <span class="unit">mm</span>
+        </span>
+        <button id="rotate-btn" type="button" title="Swap portrait / landscape">⟲</button>
+        <button id="lock-btn" type="button" title="Lock aspect ratio" class="locked">🔒</button>
+        <label>Width
+          <input id="width" type="number" min="200" max="8000" step="50" value="2000" />
+        </label>
+        <button id="reset-rect-btn" type="button" title="Reset selection rectangle to map view">Reset rect</button>
+        <button id="render-btn" type="button">Render</button>
+        <button id="save-css-btn" type="button">Save CSS</button>
+        <label>DPI <input id="dpi" type="number" min="72" max="600" step="50" value="300" /></label>
+        <button id="download-btn" type="button" disabled>Download SVG</button>
+        <button id="download-png-btn" type="button" disabled>Download PNG</button>
+        <span class="toolbar-sep"></span>
+        <button id="save-project-btn" type="button" title="Save project as JSON">Save project</button>
+        <button id="load-project-btn" type="button" title="Load project from JSON">Load project</button>
+        <input id="load-project-file" type="file" accept=".json,application/json" hidden />
+        <span id="status" class="status"></span>
+      </div>
+    </header>
+    <main class="grid">
+      <section class="pane pane-map">
+        <nav class="tabs">
+          <button class="tab active" data-map-tab="picker" type="button">Editor</button>
+          <button class="tab" data-map-tab="preview" type="button">Render</button>
+        </nav>
+        <div class="tab-pane map-pane" data-map-tab="picker">
+          <div id="map"></div>
+          <form class="map-search" id="map-search" autocomplete="off">
+            <input id="map-search-input" type="search" placeholder="Search place…" />
+            <button type="submit" title="Search (Nominatim / OpenStreetMap)" aria-label="Search">→</button>
+          </form>
+          <div class="bbox-readout">
+            <div id="bbox-label">drag the rectangle handles to pick area</div>
+            <div id="bbox-scale" class="bbox-scale"></div>
+          </div>
+        </div>
+        <div class="tab-pane map-pane" data-map-tab="preview" hidden>
+          <div class="editor-toolbar">
+            <label>Canvas
+              <select id="canvas-size"></select>
+            </label>
+            <button id="canvas-rotate-btn" type="button" title="Rotate canvas">⟲</button>
+            <span class="toolbar-sep"></span>
+            <label>Template
+              <select id="template-select"></select>
+            </label>
+            <button id="template-save-btn" type="button" title="Save current overlays as a template">Save as…</button>
+            <button id="template-delete-btn" type="button" disabled title="Delete the selected user template">Delete</button>
+            <span class="toolbar-sep"></span>
+            <button id="add-text-btn" type="button">+ Add text</button>
+            <button id="add-coords-btn" type="button" title="Drop DMS coordinates of the rectangle's center">+ Add coordinates</button>
+          </div>
+          <div id="preview"></div>
+          <div class="overlays-panel">
+            <h3>Text overlays</h3>
+            <ul id="overlay-list"></ul>
+            <p class="overlays-hint" id="overlays-empty">no overlays — click <em>+ Add text</em> to drop one on the canvas, then drag it to position.</p>
+          </div>
+        </div>
+      </section>
+      <div class="pane-splitter" id="pane-splitter" title="Drag to resize · double-click to reset"></div>
+      <section class="pane pane-settings">
+        <nav class="tabs">
+          <button class="tab active" data-settings-tab="frame" type="button">Frame</button>
+          <button class="tab" data-settings-tab="poi" type="button">POI</button>
+          <button class="tab" data-settings-tab="coords" type="button">Coords</button>
+          <button class="tab" data-settings-tab="layers" type="button">Layers</button>
+          <button class="tab" data-settings-tab="css" type="button">CSS</button>
+        </nav>
+        <div class="tab-pane settings-pane" data-settings-tab="frame">
+          <div class="frame-panel">
+            <h3>Map frame</h3>
+            <ul class="frame-options" id="frame-options"></ul>
+            <p class="overlays-hint">The frame controls how the map sits inside the canvas. Templates in the Editor tab are positioned relative to the map, so they sit nicely in whatever margin space the frame creates.</p>
+
+            <h3>Attribution</h3>
+            <label class="check-label">
+              Corner:
+              <select id="attrib-corner">
+                <option value="br">Bottom-right</option>
+                <option value="bl">Bottom-left</option>
+                <option value="tr">Top-right</option>
+                <option value="tl">Top-left</option>
+              </select>
+            </label>
+            <p class="overlays-hint">“Map data from OpenStreetMap” is always shown — OSM's ODbL licence requires attribution on derivative maps.</p>
+          </div>
+        </div>
+        <div class="tab-pane settings-pane" data-settings-tab="poi" hidden>
+          <div class="poi-panel">
+            <div class="poi-toolbar">
+              <button id="add-poi-btn" type="button">+ Add POI</button>
+              <span class="poi-hint">Drops a marker at the rectangle's center. Edit text, lat/lng, style, color, size in the row below.</span>
+            </div>
+            <ul id="poi-list"></ul>
+            <p class="overlays-hint" id="poi-empty">no points of interest yet — click <em>+ Add POI</em> to drop one.</p>
+          </div>
+        </div>
+        <div class="tab-pane settings-pane" data-settings-tab="coords" hidden>
+          <div class="coords-panel">
+            <h3>Lat / Lng grid</h3>
+            <ul class="coords-toggles">
+              <li><label class="check-label"><input id="graticule-toggle" type="checkbox" /> Show grid lines</label></li>
+              <li><label class="check-label"><input id="graticule-labels-toggle" type="checkbox" checked /> Show edge labels</label></li>
+            </ul>
+
+            <h3>Cross at a chosen point</h3>
+            <ul class="coords-toggles">
+              <li><label class="check-label"><input id="cross-toggle" type="checkbox" /> Show cross</label></li>
+              <li><label class="check-label"><input id="cross-labels-toggle" type="checkbox" /> Show lat / lng labels</label></li>
+            </ul>
+            <div class="coords-grid">
+              <label>Lat <input id="cross-lat" type="number" step="0.000001" placeholder="50.061" /></label>
+              <label>Lng <input id="cross-lng" type="number" step="0.000001" placeholder="19.937" /></label>
+              <button id="cross-center-btn" type="button" title="Use the rectangle's center">⌖ Center</button>
+            </div>
+
+            <div class="coords-grid">
+              <label>Lat label position
+                <input id="cross-lat-offset" type="range" min="-1" max="1" step="0.05" value="-0.5" />
+              </label>
+              <label>Lng label position
+                <input id="cross-lng-offset" type="range" min="-1" max="1" step="0.05" value="0.5" />
+              </label>
+            </div>
+            <p class="overlays-hint">Lat slider moves along the horizontal line (left ↔ right edge). Lng slider moves along the vertical line (top ↔ bottom edge). −1 / +1 push the label past the edge into the margin.</p>
+
+            <h3>Marker at the cross</h3>
+            <div class="coords-grid">
+              <label>Style
+                <select id="cross-marker-style">
+                  <option value="crosshair">Crosshair (+)</option>
+                  <option value="target">Target rings</option>
+                  <option value="diamond">Diamond</option>
+                  <option value="compass">Compass rose</option>
+                </select>
+              </label>
+              <label>Size <input id="cross-marker-size" type="number" step="0.001" min="0.001" value="0.001" /></label>
+            </div>
+            <p class="overlays-hint">Cross color is derived automatically from the active theme's leading stroke (road motorway / primary, falling back to coastline).</p>
+
+            <h3>Scale bar</h3>
+            <ul class="coords-toggles">
+              <li><label class="check-label"><input id="scalebar-toggle" type="checkbox" /> Show scale bar</label></li>
+              <li><label class="check-label"><input id="scalebar-auto" type="checkbox" checked /> Auto-pick a round length</label></li>
+            </ul>
+            <div class="coords-grid">
+              <label>Length (m)
+                <input id="scalebar-length" type="number" min="10" step="10" value="500" />
+              </label>
+              <label>Segments
+                <input id="scalebar-segments" type="number" min="2" max="10" step="1" value="4" />
+              </label>
+            </div>
+            <div class="coords-grid">
+              <label>Position X
+                <input id="scalebar-x" type="range" min="0" max="1" step="0.01" value="0.08" />
+              </label>
+              <label>Position Y
+                <input id="scalebar-y" type="range" min="0" max="1" step="0.01" value="0.92" />
+              </label>
+            </div>
+            <p class="overlays-hint">Position is a fraction of the canvas — 0,0 is top-left, 1,1 bottom-right. Auto length picks a 1/2/5 × 10ⁿ value sized to ~20% of the map width.</p>
+          </div>
+        </div>
+        <div class="tab-pane settings-pane" data-settings-tab="layers" hidden>
+          <div class="layers-panel">
+            <h3>Visible layers</h3>
+            <ul class="layer-toggles">
+              <li><label class="check-label"><input type="checkbox" data-layer="landuse" checked /> Landuse</label></li>
+              <li><label class="check-label"><input type="checkbox" data-layer="leisure" checked /> Leisure / parks</label></li>
+              <li><label class="check-label"><input type="checkbox" data-layer="water" checked /> Water &amp; waterways</label></li>
+              <li><label class="check-label"><input type="checkbox" data-layer="buildings" checked /> Buildings</label></li>
+              <li><label class="check-label"><input type="checkbox" data-layer="rail" checked /> Rail</label></li>
+              <li><label class="check-label"><input type="checkbox" data-layer="roads" checked /> Roads</label></li>
+            </ul>
+            <h3>Labels</h3>
+            <ul class="layer-toggles">
+              <li><label class="check-label"><input id="labels-toggle" type="checkbox" /> Street &amp; place names</label></li>
+            </ul>
+            <p class="overlays-hint">Lat/Lng grid and the cross marker have moved to the <em>Coords</em> tab.</p>
+            <p class="overlays-hint">Layer changes apply on the next render. Hide before rendering to save time on big bboxes.</p>
+          </div>
+        </div>
+        <div class="tab-pane settings-pane" data-settings-tab="css" hidden>
+          <textarea id="css-editor" spellcheck="false"></textarea>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
