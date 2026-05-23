@@ -1,0 +1,93 @@
+/* midcentury — muted teal / mustard / coral / cream. Eames-poster vibe. */
+
+.background { fill: #f4ede0; }
+
+.layer-landuse :where(polygon, path) { fill: #e6dec8; stroke: none; }
+.landuse-forest      { fill: #6e9b78; }
+.landuse-grass       { fill: #b8c894; }
+.landuse-residential { fill: #ead9b4; }
+.landuse-industrial  { fill: #cba374; }
+.landuse-commercial  { fill: #d9b380; }
+.landuse-farmland    { fill: #e8d49a; }
+.landuse-cemetery    { fill: #c8d4b0; }
+
+.layer-leisure :where(polygon, path) { fill: #b8c894; stroke: none; }
+.leisure-park    { fill: #6e9b78; }
+.leisure-garden  { fill: #94b896; }
+
+.layer-water :where(polygon, path), .water { fill: #5a9b9b; stroke: #2f6a6a; stroke-width: 1; }
+.layer-waterway polyline, .layer-waterway path { fill: none; stroke: #2f6a6a; stroke-width: 2.4; }
+.coastline { fill: none; stroke: #1d4f4f; stroke-width: 3.5; }
+
+.layer-building :where(polygon, path) { fill: #d4a548; stroke: #8a6a24; stroke-width: 0.4; }
+
+.layer-rail polyline, .layer-rail path {
+  fill: none; stroke: #2f3a3a; stroke-width: 1.6;
+  stroke-dasharray: 5 5;
+}
+
+.layer-road-casings polyline, .layer-road-casings path {
+  fill: none;
+  stroke: #f4ede0;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.road-motorway-casing    { stroke-width: 9.5; }
+.road-trunk-casing       { stroke-width: 8.5; }
+.road-primary-casing     { stroke-width: 7.5; }
+.road-secondary-casing   { stroke-width: 6.5; }
+.road-tertiary-casing    { stroke-width: 5.5; }
+.road-residential-casing { stroke-width: 4.0; }
+.road-service-casing     { stroke-width: 2.4; }
+.road-path-casing        { stroke: none; }
+.road-other-casing       { stroke-width: 2.6; }
+
+.layer-road polyline, .layer-road path {
+  fill: none;
+  stroke: #2f4a4a;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.road-path        { stroke: #6a8a8a; stroke-width: 1.0; stroke-dasharray: 2 3; }
+.road-service     { stroke: #4a6a6a; stroke-width: 1.4; }
+.road-residential { stroke: #2f4a4a; stroke-width: 2.3; }
+.road-tertiary    { stroke: #1f3a3a; stroke-width: 3.3; }
+.road-secondary   { stroke: #133030; stroke-width: 4.3; }
+.road-primary     { stroke: #d4736d; stroke-width: 5.3; }
+.road-trunk       { stroke: #c45a52; stroke-width: 6.3; }
+.road-motorway    { stroke: #b04a40; stroke-width: 7.3; }
+.road-other       { stroke: #4a6a6a; stroke-width: 1.6; }
+
+.layer-road-labels text {
+  font-family: "Futura", "Trebuchet MS", "Helvetica Neue", sans-serif;
+  fill: #1d4f4f;
+  paint-order: stroke;
+  stroke: #f4ede0;
+  stroke-width: 2.2;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+}
+
+.layer-places text {
+  font-family: "Futura", "Trebuchet MS", "Helvetica Neue", sans-serif;
+  fill: #1d4f4f;
+  paint-order: stroke;
+  stroke: #f4ede0;
+  stroke-width: 2.6;
+}
+.place-city { font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; fill: #b04a40; }
+.place-town { font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; }
+.place-village { font-weight: 500; font-style: italic; }
+.place-suburb { font-style: italic; fill: #6a8a8a; }
+
+.layer-water-labels text {
+  font-family: "Futura", "Trebuchet MS", "Helvetica Neue", sans-serif;
+  fill: #1d4f4f;
+  paint-order: stroke;
+  stroke: #f4ede0;
+  stroke-width: 2.2;
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}

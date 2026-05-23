@@ -77,3 +77,12 @@
 .place-town { font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
 .place-village { font-weight: 500; }
 .place-suburb { font-style: italic; fill: #555; }
+
+.layer-water-labels text {
+  font-family: inherit;
+  paint-order: stroke;
+  stroke-width: 2.2;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}

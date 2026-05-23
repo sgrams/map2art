@@ -1,0 +1,93 @@
+/* topo — vintage USGS-style aged paper, dense hairlines, italic serif labels. */
+
+.background { fill: #efe6c8; }
+
+.layer-landuse :where(polygon, path) { fill: #ece1be; stroke: none; }
+.landuse-forest      { fill: #c8d8a8; }
+.landuse-grass       { fill: #dee8c4; }
+.landuse-residential { fill: #ebe0bc; }
+.landuse-industrial  { fill: #e6dab8; }
+.landuse-commercial  { fill: #e8dcb8; }
+.landuse-farmland    { fill: #ead9ad; }
+.landuse-cemetery    { fill: #d4d8b0; }
+
+.layer-leisure :where(polygon, path) { fill: #d8e2b8; stroke: none; }
+.leisure-park    { fill: #c8d8a8; }
+.leisure-garden  { fill: #d2dca8; }
+
+.layer-water :where(polygon, path), .water { fill: #d4e6e8; stroke: #6a8a8e; stroke-width: 0.6; }
+.layer-waterway polyline, .layer-waterway path { fill: none; stroke: #4e7a82; stroke-width: 1.6; }
+.coastline { fill: none; stroke: #2e5a64; stroke-width: 2.6; }
+
+.layer-building :where(polygon, path) { fill: none; stroke: #6b4f24; stroke-width: 0.35; }
+
+.layer-rail polyline, .layer-rail path {
+  fill: none; stroke: #4d3f23; stroke-width: 1.2;
+  stroke-dasharray: 4 3;
+}
+
+.layer-road-casings polyline, .layer-road-casings path {
+  fill: none;
+  stroke: #efe6c8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.road-motorway-casing    { stroke-width: 6.0; }
+.road-trunk-casing       { stroke-width: 5.5; }
+.road-primary-casing     { stroke-width: 5.0; }
+.road-secondary-casing   { stroke-width: 4.4; }
+.road-tertiary-casing    { stroke-width: 3.6; }
+.road-residential-casing { stroke-width: 2.8; }
+.road-service-casing     { stroke-width: 1.6; }
+.road-path-casing        { stroke: none; }
+.road-other-casing       { stroke-width: 1.8; }
+
+.layer-road polyline, .layer-road path {
+  fill: none;
+  stroke: #6b4f24;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.road-path        { stroke: #8a6e3a; stroke-width: 0.6; stroke-dasharray: 2 2; opacity: 0.75; }
+.road-service     { stroke: #7a5e2c; stroke-width: 0.9; }
+.road-residential { stroke: #6b4f24; stroke-width: 1.4; }
+.road-tertiary    { stroke: #5a4220; stroke-width: 2.0; }
+.road-secondary   { stroke: #4a3618; stroke-width: 2.6; }
+.road-primary     { stroke: #a8451c; stroke-width: 3.2; }
+.road-trunk       { stroke: #983a14; stroke-width: 3.8; }
+.road-motorway    { stroke: #82300a; stroke-width: 4.4; }
+.road-other       { stroke: #7a5e2c; stroke-width: 1.0; }
+
+.layer-road-labels text {
+  font-family: "Garamond", "Times New Roman", Georgia, serif;
+  fill: #4d3f23;
+  paint-order: stroke;
+  stroke: #efe6c8;
+  stroke-width: 2.2;
+  letter-spacing: 0.04em;
+  font-style: italic;
+  font-weight: 500;
+}
+
+.layer-places text {
+  font-family: "Garamond", "Times New Roman", Georgia, serif;
+  fill: #2e2008;
+  paint-order: stroke;
+  stroke: #efe6c8;
+  stroke-width: 2.4;
+}
+.place-city { font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; }
+.place-town { font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; }
+.place-village { font-weight: 500; font-style: italic; }
+.place-suburb { font-style: italic; fill: #6b4f24; }
+
+.layer-water-labels text {
+  font-family: "Garamond", "Times New Roman", Georgia, serif;
+  fill: #2e5a64;
+  paint-order: stroke;
+  stroke: #efe6c8;
+  stroke-width: 2.2;
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}

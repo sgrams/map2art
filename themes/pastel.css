@@ -78,3 +78,16 @@
 .place-town { font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; }
 .place-village { font-weight: 500; font-style: italic; }
 .place-suburb { font-style: italic; fill: #6c3614; }
+
+.layer-water-labels text {
+  font-family: Georgia, "Times New Roman", serif;
+  fill: #2a4d6e;
+  paint-order: stroke;
+  stroke: #f6efe4;
+  stroke-width: 2.2;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+.water-label.water-waterway { font-size: 0.8em; }
+.water-label.water-water    { font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }

@@ -1,0 +1,80 @@
+/* mondrian — primary colour blocks, thick black grid lines. */
+
+.background { fill: #f4f4ee; }
+
+.layer-landuse :where(polygon, path) { fill: #f4f4ee; stroke: #111; stroke-width: 0.4; }
+.landuse-forest        { fill: #ffd400; stroke: #111; stroke-width: 0.6; }
+.landuse-grass         { fill: #fff5b0; stroke: #111; stroke-width: 0.4; }
+.landuse-residential   { fill: #f4f4ee; stroke: #111; stroke-width: 0.3; }
+.landuse-industrial    { fill: #d92c2c; stroke: #111; stroke-width: 0.6; }
+.landuse-commercial    { fill: #1948a0; stroke: #111; stroke-width: 0.6; }
+.landuse-cemetery      { fill: #f4f4ee; }
+.landuse-farmland      { fill: #fff5b0; }
+
+.layer-leisure :where(polygon, path) { fill: #ffd400; stroke: #111; stroke-width: 0.4; }
+.leisure-park          { fill: #ffd400; }
+
+.layer-water :where(polygon, path), .water { fill: #1948a0; stroke: #111; stroke-width: 0.6; }
+.layer-waterway polyline, .layer-waterway path { fill: none; stroke: #111; stroke-width: 2.4; }
+.coastline { fill: none; stroke: #111; stroke-width: 4; }
+
+.layer-building :where(polygon, path) { fill: #d92c2c; stroke: #111; stroke-width: 0.5; }
+
+.layer-rail polyline, .layer-rail path {
+  fill: none; stroke: #111; stroke-width: 2;
+  stroke-dasharray: 6 6;
+}
+
+.layer-road-casings polyline, .layer-road-casings path { stroke: none; }
+
+.layer-road polyline, .layer-road path {
+  fill: none;
+  stroke: #111;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+}
+.road-path        { stroke-width: 0.4; stroke-dasharray: 1.5 1.5; opacity: 0.5; }
+.road-service     { stroke-width: 1.0; }
+.road-residential { stroke-width: 1.8; }
+.road-tertiary    { stroke-width: 3.0; }
+.road-secondary   { stroke-width: 4.4; }
+.road-primary     { stroke-width: 6.0; }
+.road-trunk       { stroke-width: 7.6; }
+.road-motorway    { stroke-width: 9.4; }
+.road-other       { stroke-width: 1.2; }
+
+.layer-road-labels text {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  fill: #111;
+  paint-order: stroke;
+  stroke: #f4f4ee;
+  stroke-width: 2.6;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.layer-places text {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  fill: #111;
+  paint-order: stroke;
+  stroke: #f4f4ee;
+  stroke-width: 3;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.place-city { letter-spacing: 0.26em; }
+.place-town { letter-spacing: 0.18em; }
+.place-village { letter-spacing: 0.08em; }
+.place-suburb { letter-spacing: 0.06em; opacity: 0.65; }
+
+.layer-water-labels text {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  fill: #f4f4ee;
+  paint-order: stroke;
+  stroke: #1948a0;
+  stroke-width: 2.6;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
