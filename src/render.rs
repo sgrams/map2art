@@ -541,7 +541,7 @@ pub fn render_svg(
                     }
                     writeln!(
                         out,
-                        r#"  <polyline class="{subclass}-casing" points="{pts_str}"/>"#
+                        r#"  <polyline class="{subclass}-casing" fill="none" points="{pts_str}"/>"#
                     )
                     .unwrap();
                 }
@@ -556,6 +556,16 @@ pub fn render_svg(
         }
         writeln!(out, r#"<g class="layer layer-{layer}">"#).unwrap();
         if let Some(items) = mps {
+            // Stitched multipolygons live on filled layers (building / water /
+            // landuse / leisure); on non-filled layers a multipolygon path is
+            // a line-shaped feature and must stay un-filled — pinning the
+            // attribute keeps it correct even when CSS fails to override the
+            // SVG default `fill: black`.
+            let mp_fill_attr = if layer_is_filled(layer) {
+                ""
+            } else {
+                r#" fill="none""#
+            };
             for (subclass, outer, inner) in items {
                 let mut d = String::new();
                 for ring in outer.iter().chain(inner.iter()) {
@@ -574,7 +584,7 @@ pub fn render_svg(
                 if !d.is_empty() {
                     writeln!(
                         out,
-                        r#"  <path class="{subclass}" fill-rule="evenodd" d="{d}"/>"#
+                        r#"  <path class="{subclass}"{mp_fill_attr} fill-rule="evenodd" d="{d}"/>"#
                     )
                     .unwrap();
                 }
@@ -591,9 +601,16 @@ pub fn render_svg(
                     let _ = write!(pts_str, "{x:.2},{y:.2}");
                 }
                 let tag = if *closed && filled { "polygon" } else { "polyline" };
+                // Polylines must never inherit the SVG default `fill: black`
+                // — themes always intend them as stroked lines. We pin the
+                // attribute inline so this holds even if a renderer fails to
+                // apply the theme's `.layer-X polyline { fill: none }` rule
+                // (e.g. Firefox dropping descendant combinators when
+                // rasterizing an SVG loaded via <img>).
+                let fill_attr = if tag == "polyline" { r#" fill="none""# } else { "" };
                 writeln!(
                     out,
-                    r#"  <{tag} class="{subclass}" points="{pts_str}"/>"#
+                    r#"  <{tag} class="{subclass}"{fill_attr} points="{pts_str}"/>"#
                 )
                 .unwrap();
             }
