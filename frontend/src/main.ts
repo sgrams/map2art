@@ -2575,7 +2575,7 @@ const renderPoiLabel = (
   poi: Poi,
   bounds: { top: number; bottom: number; left: number; right: number },
   _baseFontSize: number,
-  weight: number | string = 500,
+  weight: number | string = 400,
   halo: boolean = true,
 ): string => {
   if (!poi.text) return "";
@@ -2643,7 +2643,7 @@ const renderPoiLabel = (
   const outlineStroke = poiLabelOutlineStroke();
   const haloAttrs =
     halo && !poi.textBg && outlineStroke !== null
-      ? ` paint-order="stroke" stroke="${outlineStroke}" stroke-width="${(fontSize * 0.18).toFixed(3)}"`
+      ? ` paint-order="stroke" stroke="${outlineStroke}" stroke-width="${(fontSize * 0.14).toFixed(3)}"`
       : "";
 
   return (
@@ -2670,7 +2670,7 @@ const renderPoiPin = (poi: Poi, x: number, y: number, s: number): string => {
     // Centre the dot on the bulb: the arc endpoints sit at y - 0.95m and the
     // radius is 0.52m, so the circle centre is y - (0.95 + √(0.52²-0.42²))m.
     `    <circle cx="${x.toFixed(2)}" cy="${(y - m * 1.257).toFixed(2)}" r="${(m * 0.16).toFixed(2)}" fill="#ffffff"/>\n` +
-    renderPoiLabel(poi, bounds, fontSize, 600) +
+    renderPoiLabel(poi, bounds, fontSize, 400) +
     `  </g>\n`
   );
 };
@@ -2682,7 +2682,7 @@ const renderPoiDot = (poi: Poi, x: number, y: number, s: number): string => {
   return (
     `  <g class="poi poi-dot" data-id="${poi.id}" style="cursor:move">\n` +
     `    <circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}" fill="${poi.color}" stroke="#111" stroke-width="${(s * 0.03).toFixed(3)}"/>\n` +
-    renderPoiLabel(poi, bounds, fontSize, 500) +
+    renderPoiLabel(poi, bounds, fontSize, 400) +
     `  </g>\n`
   );
 };
@@ -2717,7 +2717,7 @@ const renderPoiBubble = (poi: Poi, x: number, y: number, s: number): string => {
     `  <g class="poi poi-bubble" data-id="${poi.id}" style="cursor:move">\n` +
     `    <path d="${path}" fill="${poi.color}" stroke="#111" stroke-width="${(ms * 0.04).toFixed(3)}"/>\n` +
     (poi.text
-      ? `    <text x="${x.toFixed(2)}" y="${(by + textH / 2 + fontSize * 0.34).toFixed(2)}" font-size="${fontSize.toFixed(2)}" font-family="${poiLabelFontCss()}" font-weight="${poiLabelWeight(500)}"${poiLabelStyleAttr()} text-anchor="middle"${poiLabelTrackAttr()} fill="${poi.textColor}">${escapeXml(poiLabelCase(poi.text))}</text>\n`
+      ? `    <text x="${x.toFixed(2)}" y="${(by + textH / 2 + fontSize * 0.34).toFixed(2)}" font-size="${fontSize.toFixed(2)}" font-family="${poiLabelFontCss()}" font-weight="${poiLabelWeight(400)}"${poiLabelStyleAttr()} text-anchor="middle"${poiLabelTrackAttr()} fill="${poi.textColor}">${escapeXml(poiLabelCase(poi.text))}</text>\n`
       : "") +
     `  </g>\n`
   );
@@ -2738,7 +2738,7 @@ const renderPoiNumbered = (
     `  <g class="poi poi-numbered" data-id="${poi.id}" style="cursor:move">\n` +
     `    <circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}" fill="${poi.color}" stroke="#111" stroke-width="${(s * 0.05).toFixed(3)}"/>\n` +
     `    <text x="${x.toFixed(2)}" y="${(y + numberSize * 0.33).toFixed(2)}" font-size="${numberSize.toFixed(2)}" font-family="${poiLabelFontCss()}" font-weight="${poiLabelWeight(700)}"${poiLabelStyleAttr()} text-anchor="middle" fill="${poi.textColor}">${index}</text>\n` +
-    renderPoiLabel(poi, bounds, labelSize, 500) +
+    renderPoiLabel(poi, bounds, labelSize, 400) +
     `  </g>\n`
   );
 };
@@ -2761,7 +2761,7 @@ const renderPoiFlag = (poi: Poi, x: number, y: number, s: number): string => {
     `  <g class="poi poi-flag" data-id="${poi.id}" style="cursor:move">\n` +
     `    <line x1="${x.toFixed(2)}" y1="${y.toFixed(2)}" x2="${x.toFixed(2)}" y2="${top.toFixed(2)}" stroke="#111" stroke-width="${(ms * 0.06).toFixed(3)}" stroke-linecap="round"/>\n` +
     `    <path d="M ${x.toFixed(2)},${top.toFixed(2)} L ${(x + flagW).toFixed(2)},${(top + flagH * 0.25).toFixed(2)} L ${x.toFixed(2)},${(top + flagH).toFixed(2)} Z" fill="${poi.color}" stroke="#111" stroke-width="${(ms * 0.04).toFixed(3)}" stroke-linejoin="round"/>\n` +
-    renderPoiLabel(poi, bounds, 0, 600) +
+    renderPoiLabel(poi, bounds, 0, 400) +
     `  </g>\n`
   );
 };
