@@ -596,6 +596,7 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
                 id,
                 nodes: refs,
                 tags,
+                ..
             } => {
                 way_nodes.insert(*id, refs.clone());
                 way_tags.insert(*id, tags);
@@ -615,7 +616,7 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
     let mut multipolygons: Vec<MultiPoly> = Vec::new();
 
     for el in &data.elements {
-        if let Element::Relation { members, tags } = el {
+        if let Element::Relation { members, tags, .. } = el {
             if tags.get("type").map(String::as_str) != Some("multipolygon") {
                 continue;
             }
@@ -701,6 +702,7 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
             id,
             nodes: refs,
             tags,
+            ..
         } = el
         {
             if consumed_ways.contains(id) {
@@ -1015,7 +1017,10 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
         for el in &data.elements {
             match el {
                 Element::Way {
-                    nodes: refs, tags, ..
+                    nodes: refs,
+                    tags,
+                    center,
+                    ..
                 } => {
                     let Some(name) = tags.get("name") else {
                         continue;
@@ -1039,16 +1044,21 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
                         .iter()
                         .filter_map(|nid| nodes.get(nid).copied())
                         .collect();
-                    if pts.is_empty() {
-                        continue;
-                    }
-                    groups
+                    let entry = groups
                         .entry(name.clone())
-                        .or_insert_with(|| (Vec::new(), kind))
-                        .0
-                        .extend(pts);
+                        .or_insert_with(|| (Vec::new(), kind));
+                    if !pts.is_empty() {
+                        entry.0.extend(pts);
+                    } else if let Some(c) = center {
+                        // Sea/bay area fetched via out-center (no geometry).
+                        entry.0.push((c.lon, c.lat));
+                    }
                 }
-                Element::Relation { members, tags } => {
+                Element::Relation {
+                    members,
+                    tags,
+                    center,
+                } => {
                     let natural = tags.get("natural").map(String::as_str);
                     if !matches!(natural, Some("water") | Some("bay") | Some("strait")) {
                         continue;
@@ -1065,6 +1075,15 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
                     } else {
                         "sea" // natural=bay|strait
                     };
+                    if let Some(c) = center {
+                        // Sea/bay area fetched via out-center (no member geometry).
+                        groups
+                            .entry(name.clone())
+                            .or_insert_with(|| (Vec::new(), kind))
+                            .0
+                            .push((c.lon, c.lat));
+                        continue;
+                    }
                     for m in members {
                         if m.member_type != "way" {
                             continue;

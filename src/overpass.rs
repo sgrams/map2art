@@ -19,6 +19,14 @@ pub struct OverpassResponse {
     pub elements: Vec<Element>,
 }
 
+/// Bounding-box centre emitted by Overpass `out center` (used to anchor a label
+/// on a way/relation whose full geometry we deliberately don't fetch).
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct Center {
+    pub lat: f64,
+    pub lon: f64,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Element {
@@ -31,15 +39,21 @@ pub enum Element {
     },
     Way {
         id: i64,
+        // Absent when fetched via `out tags center` (sea/bay name areas).
+        #[serde(default)]
         nodes: Vec<i64>,
         #[serde(default)]
         tags: HashMap<String, String>,
+        #[serde(default)]
+        center: Option<Center>,
     },
     Relation {
         #[serde(default)]
         members: Vec<RelationMember>,
         #[serde(default)]
         tags: HashMap<String, String>,
+        #[serde(default)]
+        center: Option<Center>,
     },
 }
 
@@ -87,12 +101,17 @@ pub fn build_query(bbox: Bbox) -> String {
            node[\"place\"]({b});\n\
            node[\"place\"~\"^(sea|ocean|strait)$\"]({eb});\n\
            node[\"natural\"~\"^(bay|strait)$\"]({eb});\n\
-           way[\"natural\"~\"^(bay|strait)$\"]({eb});\n\
-           relation[\"natural\"~\"^(bay|strait)$\"]({eb});\n\
          );\n\
          out body;\n\
          >;\n\
-         out skel qt;\n"
+         out skel qt;\n\
+         /* Sea / bay name *areas* (centre only — no geometry recursion, so the\n\
+            request stays light and reliable). */\n\
+         (\n\
+           way[\"natural\"~\"^(bay|strait)$\"]({eb});\n\
+           relation[\"natural\"~\"^(bay|strait)$\"]({eb});\n\
+         );\n\
+         out tags center;\n"
     )
 }
 
