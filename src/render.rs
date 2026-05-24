@@ -281,17 +281,29 @@ fn place_priority(kind: &str) -> i32 {
     }
 }
 
-pub fn render_svg(
-    data: &OverpassResponse,
-    bbox: Bbox,
-    canvas_width: f64,
-    css: &str,
-    shape: &str,
-    street_labels: bool,
-    place_labels: bool,
-    water_labels: bool,
-    hidden: &HashSet<String>,
-) -> String {
+/// Subset of label / layer toggles that change which OSM features appear in
+/// the rendered SVG. Grouped into a single struct so the public `render_svg`
+/// signature stays tidy.
+pub struct RenderOptions<'a> {
+    pub canvas_width: f64,
+    pub css: &'a str,
+    pub shape: &'a str,
+    pub street_labels: bool,
+    pub place_labels: bool,
+    pub water_labels: bool,
+    pub hidden: &'a HashSet<String>,
+}
+
+pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) -> String {
+    let RenderOptions {
+        canvas_width,
+        css,
+        shape,
+        street_labels,
+        place_labels,
+        water_labels,
+        hidden,
+    } = opts;
     // ---- index ----
     let mut nodes: HashMap<i64, (f64, f64)> = HashMap::with_capacity(data.elements.len());
     let mut place_nodes: Vec<(f64, f64, String, String)> = Vec::new(); // (lon, lat, kind, name)
@@ -393,12 +405,12 @@ pub fn render_svg(
         "rail",
         "road",
     ];
-    let mut way_by_layer: HashMap<&'static str, Vec<(String, Vec<(f64, f64)>, bool)>> =
-        HashMap::new();
-    let mut mp_by_layer: HashMap<
-        &'static str,
-        Vec<(String, Vec<Vec<(f64, f64)>>, Vec<Vec<(f64, f64)>>)>,
-    > = HashMap::new();
+    // (subclass, projected points, is-closed)
+    type WayEntry = (String, Vec<(f64, f64)>, bool);
+    // (subclass, outer rings, inner rings)
+    type MpEntry = (String, Vec<Vec<(f64, f64)>>, Vec<Vec<(f64, f64)>>);
+    let mut way_by_layer: HashMap<&'static str, Vec<WayEntry>> = HashMap::new();
+    let mut mp_by_layer: HashMap<&'static str, Vec<MpEntry>> = HashMap::new();
 
     struct NamedRoad {
         id: i64,
@@ -440,25 +452,25 @@ pub fn render_svg(
             let closed = refs.first() == refs.last() && refs.len() > 2;
 
             // Collect named-road segments for textPath labels.
-            if info.layer == "road" {
-                if let Some(name) = tags.get("name") {
-                    let road_kind = info
-                        .subclass
-                        .strip_prefix("road-")
-                        .unwrap_or("")
-                        .to_string();
-                    let length = path_length(&pts);
-                    named_roads_by_name
-                        .entry(name.clone())
-                        .or_default()
-                        .push(NamedRoad {
-                            id: *id,
-                            name: name.clone(),
-                            road_kind,
-                            points: pts.clone(),
-                            length,
-                        });
-                }
+            if info.layer == "road"
+                && let Some(name) = tags.get("name")
+            {
+                let road_kind = info
+                    .subclass
+                    .strip_prefix("road-")
+                    .unwrap_or("")
+                    .to_string();
+                let length = path_length(&pts);
+                named_roads_by_name
+                    .entry(name.clone())
+                    .or_default()
+                    .push(NamedRoad {
+                        id: *id,
+                        name: name.clone(),
+                        road_kind,
+                        points: pts.clone(),
+                        length,
+                    });
             }
 
             way_by_layer
@@ -538,25 +550,25 @@ pub fn render_svg(
         }
         // Emit road casings just before the road layer so colored road strokes
         // overlay the casings.
-        if *layer == "road" {
-            if let Some(items) = way_by_layer.get("road") {
-                writeln!(out, r#"<g class="layer layer-road-casings">"#).unwrap();
-                for (subclass, pts, _closed) in items {
-                    let mut pts_str = String::with_capacity(pts.len() * 14);
-                    for (i, (x, y)) in pts.iter().enumerate() {
-                        if i > 0 {
-                            pts_str.push(' ');
-                        }
-                        let _ = write!(pts_str, "{x:.2},{y:.2}");
+        if *layer == "road"
+            && let Some(items) = way_by_layer.get("road")
+        {
+            writeln!(out, r#"<g class="layer layer-road-casings">"#).unwrap();
+            for (subclass, pts, _closed) in items {
+                let mut pts_str = String::with_capacity(pts.len() * 14);
+                for (i, (x, y)) in pts.iter().enumerate() {
+                    if i > 0 {
+                        pts_str.push(' ');
                     }
-                    writeln!(
-                        out,
-                        r#"  <polyline class="{subclass}-casing" fill="none" points="{pts_str}"/>"#
-                    )
-                    .unwrap();
+                    let _ = write!(pts_str, "{x:.2},{y:.2}");
                 }
-                writeln!(out, "</g>").unwrap();
+                writeln!(
+                    out,
+                    r#"  <polyline class="{subclass}-casing" fill="none" points="{pts_str}"/>"#
+                )
+                .unwrap();
             }
+            writeln!(out, "</g>").unwrap();
         }
 
         let ways = way_by_layer.get(*layer);
@@ -704,7 +716,9 @@ pub fn render_svg(
     if water_labels {
         // Collect all lng/lat points per unique name across way segments and
         // relation outer members, plus classify each as sea / lake / river.
-        let mut groups: HashMap<String, (Vec<(f64, f64)>, &'static str)> = HashMap::new();
+        // (points, classification — "sea" | "lake" | "river")
+        type WaterGroup = (Vec<(f64, f64)>, &'static str);
+        let mut groups: HashMap<String, WaterGroup> = HashMap::new();
         for el in &data.elements {
             match el {
                 Element::Way {

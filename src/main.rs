@@ -67,10 +67,10 @@ async fn fetch_cached(state: &AppState, bbox: Bbox) -> anyhow::Result<Arc<Overpa
     let key = bbox_key(bbox);
     {
         let mut cache = state.cache.lock().unwrap();
-        if let Some((inserted, data)) = cache.get(&key) {
-            if inserted.elapsed() < CACHE_TTL {
-                return Ok(data.clone());
-            }
+        if let Some((inserted, data)) = cache.get(&key)
+            && inserted.elapsed() < CACHE_TTL
+        {
+            return Ok(data.clone());
         }
     }
     let data = Arc::new(overpass::fetch(&state.http, &state.overpass_url, bbox).await?);
@@ -147,13 +147,15 @@ async fn post_render(state: web::Data<AppState>, body: web::Json<RenderRequest>)
     let svg = render::render_svg(
         &data,
         bbox,
-        body.width.unwrap_or(2000.0),
-        &css,
-        shape,
-        street_labels,
-        place_labels,
-        water_labels,
-        &hidden,
+        render::RenderOptions {
+            canvas_width: body.width.unwrap_or(2000.0),
+            css: &css,
+            shape,
+            street_labels,
+            place_labels,
+            water_labels,
+            hidden: &hidden,
+        },
     );
 
     HttpResponse::Ok().content_type("image/svg+xml").body(svg)
@@ -272,10 +274,10 @@ async fn list_themes(state: web::Data<AppState>) -> impl Responder {
     let mut names = Vec::new();
     if let Ok(mut entries) = tokio::fs::read_dir(&state.themes_dir).await {
         while let Ok(Some(e)) = entries.next_entry().await {
-            if let Some(name) = e.file_name().to_str() {
-                if let Some(stem) = name.strip_suffix(".css") {
-                    names.push(stem.to_string());
-                }
+            if let Some(name) = e.file_name().to_str()
+                && let Some(stem) = name.strip_suffix(".css")
+            {
+                names.push(stem.to_string());
             }
         }
     }
