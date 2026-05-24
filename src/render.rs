@@ -440,14 +440,14 @@ fn clip_runs(chain: &[(f64, f64)], w: f64, h: f64) -> Vec<Vec<(f64, f64)>> {
 /// can't assemble a confident, well-formed result, so nothing is filled rather
 /// than risking filling land. The map clip trims the path to the viewport.
 fn sea_fill_path(chains: &[Vec<(f64, f64)>], w: f64, h: f64) -> String {
-    // Sea is on the LEFT of coastline travel in canvas coords (geographic
-    // water-on-right flips under the Y-down projection). The +t perimeter walk
-    // below encloses the RIGHT of travel, so reverse each chain first to flip
-    // the enclosed side onto the sea. (Pinned by sea_tests::sea_fills_left.)
+    // Sea is on the RIGHT of coastline travel in canvas coords. OSM puts water
+    // on the right of the way direction (geographic); a north-bound coast has
+    // water to its east, which projects to screen-right, so the side is
+    // preserved under the Y-flip. The +t perimeter walk below encloses exactly
+    // the right-of-travel side. (Pinned by the sea_tests winding tests.)
     let mut runs: Vec<Vec<(f64, f64)>> = Vec::new();
     for c in chains {
-        let rev: Vec<(f64, f64)> = c.iter().rev().copied().collect();
-        runs.extend(clip_runs(&rev, w, h));
+        runs.extend(clip_runs(c, w, h));
     }
     if runs.is_empty() {
         return String::new();
@@ -1175,26 +1175,26 @@ mod sea_tests {
     }
 
     // A coastline crossing the 100×100 viewport top→bottom at x=40, travelling
-    // downward (+y in canvas). Sea is on the LEFT of travel, which for downward
-    // screen travel is the +x (east) half — the fill must land there.
+    // downward (+y in canvas). Sea is on the RIGHT of travel, which for downward
+    // screen travel is the -x (west) half — the fill must land there.
     #[test]
-    fn sea_fills_left_of_travel() {
+    fn sea_fills_right_of_travel() {
         let chains = vec![vec![(40.0, -10.0), (40.0, 110.0)]];
         let d = sea_fill_path(&chains, 100.0, 100.0);
         assert!(!d.is_empty(), "expected a sea polygon");
         let cx = centroid_x(&d);
-        assert!(cx > 50.0, "sea should fill the +x half; centroid x = {cx}");
+        assert!(cx < 50.0, "sea should fill the -x half; centroid x = {cx}");
     }
 
-    // Reversed coastline (travelling up) flips the sea to the −x (west) half.
+    // Reversed coastline (travelling up) flips the sea to the +x (east) half.
     #[test]
     fn sea_flips_with_direction() {
         let chains = vec![vec![(40.0, 110.0), (40.0, -10.0)]];
         let d = sea_fill_path(&chains, 100.0, 100.0);
         assert!(!d.is_empty());
         assert!(
-            centroid_x(&d) < 50.0,
-            "reversed coast should fill the −x half"
+            centroid_x(&d) > 50.0,
+            "reversed coast should fill the +x half"
         );
     }
 
