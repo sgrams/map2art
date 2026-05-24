@@ -52,6 +52,15 @@ const crossLngOffsetInput = $<HTMLInputElement>("cross-lng-offset");
 const crossCenterBtn = $<HTMLButtonElement>("cross-center-btn");
 const crossMarkerStyleSelect = $<HTMLSelectElement>("cross-marker-style");
 const crossMarkerSizeInput = $<HTMLInputElement>("cross-marker-size");
+const coordFormatSelect = $<HTMLSelectElement>("coord-format");
+const coordPrecisionInput = $<HTMLInputElement>("coord-precision");
+const poiLabelFontSelect = $<HTMLSelectElement>("poi-label-font");
+const poiLabelTrackingInput = $<HTMLInputElement>("poi-label-tracking");
+const poiLabelUpperToggle = $<HTMLInputElement>("poi-label-upper");
+const poiLabelBoldToggle = $<HTMLInputElement>("poi-label-bold");
+const poiLabelItalicToggle = $<HTMLInputElement>("poi-label-italic");
+const poiLabelOutlineSelect = $<HTMLSelectElement>("poi-label-outline");
+const poiLabelOutlineColorInput = $<HTMLInputElement>("poi-label-outline-color");
 const attribCornerSelect = $<HTMLSelectElement>("attrib-corner");
 const canvasBgOverrideToggle = $<HTMLInputElement>("canvas-bg-override-toggle");
 const canvasBgColorInput = $<HTMLInputElement>("canvas-bg-color");
@@ -1158,6 +1167,28 @@ for (const el of [labelStyleToggle, labelColorInput, labelFontSelect] as const) 
 labelStyleToggle.addEventListener("change", syncLabelStyleEnabled);
 syncLabelStyleEnabled();
 
+// POI label typeface picker (shares the overlay font list); default keeps the
+// previous sans look.
+const POI_DEFAULT_FONT = "'Helvetica Neue', Helvetica, Arial, sans-serif";
+for (const f of FONT_FAMILIES) {
+  poiLabelFontSelect.appendChild(new Option(f.label, f.css));
+}
+poiLabelFontSelect.value = POI_DEFAULT_FONT;
+const syncPoiOutlineEnabled = () => {
+  poiLabelOutlineColorInput.disabled = poiLabelOutlineSelect.value !== "custom";
+};
+poiLabelOutlineSelect.addEventListener("change", syncPoiOutlineEnabled);
+syncPoiOutlineEnabled();
+for (const el of [
+  poiLabelFontSelect, poiLabelTrackingInput, poiLabelUpperToggle,
+  poiLabelBoldToggle, poiLabelItalicToggle,
+  poiLabelOutlineSelect, poiLabelOutlineColorInput,
+  coordFormatSelect, coordPrecisionInput,
+] as const) {
+  el.addEventListener("input", () => recompose());
+  el.addEventListener("change", () => recompose());
+}
+
 const overlays: Overlay[] = [];
 const selectedIds = new Set<string>();
 
@@ -1209,15 +1240,33 @@ const addOverlay = () => {
 
 addTextBtn.addEventListener("click", addOverlay);
 
-const toDMS = (deg: number, pos: string, neg: string): string => {
+/** Format one coordinate per the Coords-tab format + precision setting. Used
+ *  everywhere coordinates are printed so they stay consistent. */
+const formatCoord = (deg: number, pos: string, neg: string): string => {
   const sign = deg >= 0 ? pos : neg;
   const abs = Math.abs(deg);
-  const d = Math.floor(abs);
-  const mFloat = (abs - d) * 60;
-  const m = Math.floor(mFloat);
-  const s = Math.round((mFloat - m) * 60);
-  return `${d}°${String(m).padStart(2, "0")}′${String(s).padStart(2, "0")}″${sign}`;
+  const prec = Math.min(6, Math.max(0, parseInt(coordPrecisionInput.value, 10) || 0));
+  switch (coordFormatSelect.value) {
+    case "decimal":
+      return `${abs.toFixed(prec)}°${sign}`;
+    case "dmm": {
+      const d = Math.floor(abs);
+      const min = (abs - d) * 60;
+      const minStr = min.toFixed(prec).padStart(prec > 0 ? prec + 3 : 2, "0");
+      return `${d}°${minStr}′${sign}`;
+    }
+    case "dms":
+    default: {
+      const d = Math.floor(abs);
+      const mFloat = (abs - d) * 60;
+      const m = Math.floor(mFloat);
+      const s = Math.round((mFloat - m) * 60);
+      return `${d}°${String(m).padStart(2, "0")}′${String(s).padStart(2, "0")}″${sign}`;
+    }
+  }
 };
+const formatLat = (lat: number): string => formatCoord(lat, "N", "S");
+const formatLng = (lng: number): string => formatCoord(lng, "E", "W");
 
 const addCoordsOverlay = () => {
   if (!lastMapSvg) {
@@ -1227,7 +1276,7 @@ const addCoordsOverlay = () => {
   const b = norm();
   const lat = (b.south + b.north) / 2;
   const lng = (b.west + b.east) / 2;
-  const text = `${toDMS(lat, "N", "S")}  ·  ${toDMS(lng, "E", "W")}`;
+  const text = `${formatLat(lat)}  ·  ${formatLng(lng)}`;
 
   const aspect = lastMapAspect ?? 1;
   const { w, h } = canvasDims(aspect);
@@ -2495,6 +2544,29 @@ const inverseMercator = (x: number, y: number) => {
 
 /** Place a label relative to a marker's bounding box and optionally render a
  *  rounded background behind it. Returns the SVG fragment (rect + text). */
+// Shared POI label styling from the global "Label text" controls.
+const poiLabelFontCss = (): string => poiLabelFontSelect.value;
+const poiLabelCase = (t: string): string =>
+  poiLabelUpperToggle.checked ? t.toUpperCase() : t;
+const poiLabelTrackAttr = (): string => {
+  const v = parseFloat(poiLabelTrackingInput.value);
+  return Number.isFinite(v) && v > 0 ? ` letter-spacing="${v}em"` : "";
+};
+// Bold forces weight 700 (overriding the per-marker default); italic adds a
+// font-style. Both apply to every POI label.
+const poiLabelWeight = (base: number | string): number | string =>
+  poiLabelBoldToggle.checked ? 700 : base;
+const poiLabelStyleAttr = (): string =>
+  poiLabelItalicToggle.checked ? ` font-style="italic"` : "";
+/** Outline (paint-order halo) color for POI text: auto = theme background,
+ *  custom color, or none. */
+const poiLabelOutlineStroke = (): string | null => {
+  const mode = poiLabelOutlineSelect.value;
+  if (mode === "none") return null;
+  if (mode === "custom") return poiLabelOutlineColorInput.value;
+  return themeBackgroundColor(cssEditor.value); // auto
+};
+
 const renderPoiLabel = (
   poi: Poi,
   bounds: { top: number; bottom: number; left: number; right: number },
@@ -2561,20 +2633,21 @@ const renderPoiLabel = (
       `fill="${poi.textBgColor}" stroke="rgba(0,0,0,0.18)" stroke-width="${(fontSize * 0.04).toFixed(3)}"/>\n`;
   }
 
-  // When a bg is shown the halo is redundant and just thickens the type;
-  // skip it. Otherwise paint-order + white stroke keeps text legible
-  // against busy map backgrounds.
+  // When a bg is shown the halo is redundant and just thickens the type; skip
+  // it. Otherwise paint-order + an outline (auto theme bg / custom / none)
+  // keeps text legible against busy map backgrounds, on light and dark themes.
+  const outlineStroke = poiLabelOutlineStroke();
   const haloAttrs =
-    halo && !poi.textBg
-      ? ` paint-order="stroke" stroke="#ffffff" stroke-width="${(fontSize * 0.18).toFixed(3)}"`
+    halo && !poi.textBg && outlineStroke !== null
+      ? ` paint-order="stroke" stroke="${outlineStroke}" stroke-width="${(fontSize * 0.18).toFixed(3)}"`
       : "";
 
   return (
     bg +
     `    <text x="${x.toFixed(2)}" y="${y.toFixed(2)}" ` +
-    `font-size="${fontSize.toFixed(2)}" font-family="Helvetica, Arial, sans-serif" ` +
-    `font-weight="${weight}" text-anchor="${anchor}" ` +
-    `dominant-baseline="${baseline}" fill="${poi.textColor}"${haloAttrs}>${escapeXml(poi.text)}</text>\n`
+    `font-size="${fontSize.toFixed(2)}" font-family="${poiLabelFontCss()}" ` +
+    `font-weight="${poiLabelWeight(weight)}"${poiLabelStyleAttr()} text-anchor="${anchor}"${poiLabelTrackAttr()} ` +
+    `dominant-baseline="${baseline}" fill="${poi.textColor}"${haloAttrs}>${escapeXml(poiLabelCase(poi.text))}</text>\n`
   );
 };
 
@@ -2640,7 +2713,7 @@ const renderPoiBubble = (poi: Poi, x: number, y: number, s: number): string => {
     `  <g class="poi poi-bubble" data-id="${poi.id}" style="cursor:move">\n` +
     `    <path d="${path}" fill="${poi.color}" stroke="#111" stroke-width="${(ms * 0.04).toFixed(3)}"/>\n` +
     (poi.text
-      ? `    <text x="${x.toFixed(2)}" y="${(by + textH / 2 + fontSize * 0.34).toFixed(2)}" font-size="${fontSize.toFixed(2)}" font-family="Helvetica, Arial, sans-serif" font-weight="500" text-anchor="middle" fill="${poi.textColor}">${escapeXml(poi.text)}</text>\n`
+      ? `    <text x="${x.toFixed(2)}" y="${(by + textH / 2 + fontSize * 0.34).toFixed(2)}" font-size="${fontSize.toFixed(2)}" font-family="${poiLabelFontCss()}" font-weight="${poiLabelWeight(500)}"${poiLabelStyleAttr()} text-anchor="middle"${poiLabelTrackAttr()} fill="${poi.textColor}">${escapeXml(poiLabelCase(poi.text))}</text>\n`
       : "") +
     `  </g>\n`
   );
@@ -2660,7 +2733,7 @@ const renderPoiNumbered = (
   return (
     `  <g class="poi poi-numbered" data-id="${poi.id}" style="cursor:move">\n` +
     `    <circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}" fill="${poi.color}" stroke="#111" stroke-width="${(s * 0.05).toFixed(3)}"/>\n` +
-    `    <text x="${x.toFixed(2)}" y="${(y + numberSize * 0.33).toFixed(2)}" font-size="${numberSize.toFixed(2)}" font-family="Helvetica, Arial, sans-serif" font-weight="700" text-anchor="middle" fill="${poi.textColor}">${index}</text>\n` +
+    `    <text x="${x.toFixed(2)}" y="${(y + numberSize * 0.33).toFixed(2)}" font-size="${numberSize.toFixed(2)}" font-family="${poiLabelFontCss()}" font-weight="${poiLabelWeight(700)}"${poiLabelStyleAttr()} text-anchor="middle" fill="${poi.textColor}">${index}</text>\n` +
     renderPoiLabel(poi, bounds, labelSize, 500) +
     `  </g>\n`
   );
@@ -2934,8 +3007,11 @@ const renderCross = (
   if (showLabels) {
     const fs = minDim * 0.018;
     const halo = (fs * 0.22).toFixed(2);
-    const latTxt = `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? "N" : "S"}`;
-    const lngTxt = `${Math.abs(lng).toFixed(4)}°${lng >= 0 ? "E" : "W"}`;
+    const latTxt = formatLat(lat);
+    const lngTxt = formatLng(lng);
+    // Auto outline: knock out the theme background so the label stays legible
+    // on dark themes (replaces the old hardcoded near-white halo).
+    const haloColor = themeBackgroundColor(cssEditor.value);
 
     // Latitude label slides along the horizontal line. offset −0.5 = left edge,
     // 0 = at the intersection, +0.5 = right edge. ±1 puts it in the margin.
@@ -2948,7 +3024,7 @@ const renderCross = (
       `    <text x="${(latPosX + latPad).toFixed(2)}" y="${(cy - fs * 0.4).toFixed(2)}" ` +
       `font-size="${fs.toFixed(2)}" font-family="ui-monospace, 'Courier New', monospace" ` +
       `font-weight="600" fill="${lineColor}" text-anchor="${latAnchor}" ` +
-      `paint-order="stroke" stroke="#fafafa" stroke-width="${halo}" ` +
+      `paint-order="stroke" stroke="${haloColor}" stroke-width="${halo}" ` +
       `letter-spacing="0.05em">${latTxt}</text>\n`;
 
     // Longitude label slides along the vertical line. offset −0.5 = top edge,
@@ -2965,7 +3041,7 @@ const renderCross = (
       `    <text x="${(cx + fs * 0.45).toFixed(2)}" y="${(lngPosY + lngPad).toFixed(2)}" ` +
       `font-size="${fs.toFixed(2)}" font-family="ui-monospace, 'Courier New', monospace" ` +
       `font-weight="600" fill="${lineColor}" dominant-baseline="${lngBaseline}" ` +
-      `paint-order="stroke" stroke="#fafafa" stroke-width="${halo}" ` +
+      `paint-order="stroke" stroke="${haloColor}" stroke-width="${halo}" ` +
       `letter-spacing="0.05em">${lngTxt}</text>\n`;
   }
 
@@ -3491,7 +3567,7 @@ const composeSvg = (forExport = false): string | null => {
 
     // Line 1: coordinates. Line 2: whichever of dims / scale / date are on.
     const line1 = infoCoordsToggle.checked
-      ? `${toDMS(midLat, "N", "S")}  ·  ${toDMS(midLng, "E", "W")}`
+      ? `${formatLat(midLat)}  ·  ${formatLng(midLng)}`
       : "";
     const parts2: string[] = [];
     if (infoDimsToggle.checked) parts2.push(`${fmtM(widthM)}  ×  ${fmtM(heightM)}`);
@@ -4681,6 +4757,17 @@ type SavedProject = {
   streetLabels: boolean;
   placeLabels: boolean;
   labelStyle?: { override: boolean; color: string; font: string };
+  coordFormat?: string;
+  coordPrecision?: number;
+  poiLabel?: {
+    font: string;
+    upper: boolean;
+    bold?: boolean;
+    italic?: boolean;
+    tracking: number;
+    outline: string;
+    outlineColor: string;
+  };
   seaLabels?: boolean;
   lakeLabels?: boolean;
   riverLabels?: boolean;
@@ -4757,6 +4844,17 @@ const saveProject = () => {
       override: labelStyleToggle.checked,
       color: labelColorInput.value,
       font: labelFontSelect.value,
+    },
+    coordFormat: coordFormatSelect.value,
+    coordPrecision: parseFloat(coordPrecisionInput.value) || 4,
+    poiLabel: {
+      font: poiLabelFontSelect.value,
+      upper: poiLabelUpperToggle.checked,
+      bold: poiLabelBoldToggle.checked,
+      italic: poiLabelItalicToggle.checked,
+      tracking: parseFloat(poiLabelTrackingInput.value) || 0,
+      outline: poiLabelOutlineSelect.value,
+      outlineColor: poiLabelOutlineColorInput.value,
     },
     seaLabels: seaLabelsToggle.checked,
     lakeLabels: lakeLabelsToggle.checked,
@@ -4865,6 +4963,18 @@ const applyProject = (p: SavedProject) => {
     labelColorInput.value = p.labelStyle.color;
     labelFontSelect.value = p.labelStyle.font;
     syncLabelStyleEnabled();
+  }
+  if (p.coordFormat) coordFormatSelect.value = p.coordFormat;
+  if (typeof p.coordPrecision === "number") coordPrecisionInput.value = String(p.coordPrecision);
+  if (p.poiLabel) {
+    poiLabelFontSelect.value = p.poiLabel.font;
+    poiLabelUpperToggle.checked = p.poiLabel.upper;
+    poiLabelBoldToggle.checked = !!p.poiLabel.bold;
+    poiLabelItalicToggle.checked = !!p.poiLabel.italic;
+    poiLabelTrackingInput.value = String(p.poiLabel.tracking);
+    poiLabelOutlineSelect.value = p.poiLabel.outline;
+    poiLabelOutlineColorInput.value = p.poiLabel.outlineColor;
+    syncPoiOutlineEnabled();
   }
   seaLabelsToggle.checked = !!p.seaLabels;
   lakeLabelsToggle.checked = !!p.lakeLabels;

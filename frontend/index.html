@@ -202,6 +202,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <button id="add-poi-btn" type="button">+ Add POI</button>
               <span class="poi-hint">Drops a marker at the rectangle's center — or left-click the map. Drag a marker to move it; right-click a POI to remove it; reorder rows with ↑/↓ to renumber.</span>
             </div>
+            <h3>Label text (all POIs)</h3>
+            <div class="coords-grid">
+              <label>Font <select id="poi-label-font"></select></label>
+              <label>Tracking <input id="poi-label-tracking" type="number" step="0.01" min="0" value="0" /></label>
+            </div>
+            <div class="coords-grid">
+              <label class="check-label"><input id="poi-label-bold" type="checkbox" /> Bold</label>
+              <label class="check-label"><input id="poi-label-italic" type="checkbox" /> Italic</label>
+              <label class="check-label"><input id="poi-label-upper" type="checkbox" /> UPPERCASE</label>
+            </div>
+            <div class="coords-grid">
+              <label>Outline
+                <select id="poi-label-outline">
+                  <option value="auto">Auto (theme)</option>
+                  <option value="none">None</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label>Outline color <input id="poi-label-outline-color" type="color" value="#ffffff" /></label>
+            </div>
+            <p class="overlays-hint">Typeface, case and outline apply to every POI label. Auto outline matches the theme background so labels stay legible on light <em>and</em> dark maps.</p>
             <ul id="poi-list"></ul>
             <p class="overlays-hint" id="poi-empty">no points of interest yet — click <em>+ Add POI</em> to drop one.</p>
 
@@ -216,6 +237,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
         <div class="tab-pane settings-pane" data-settings-tab="coords" hidden>
           <div class="coords-panel">
+            <h3>Coordinate format</h3>
+            <div class="coords-grid">
+              <label>Format
+                <select id="coord-format">
+                  <option value="dms">DMS (48°07′12″N)</option>
+                  <option value="decimal">Decimal (48.1234°N)</option>
+                  <option value="dmm">Deg + min (48°07.20′N)</option>
+                </select>
+              </label>
+              <label>Decimals <input id="coord-precision" type="number" min="0" max="6" step="1" value="4" /></label>
+            </div>
+            <p class="overlays-hint">Used everywhere coordinates appear — the cross labels, the Atlas/Field-notes info strip, and the “+ Add coords” overlay. Decimals apply to the decimal and deg+min formats.</p>
+
             <h3>Lat / Lng grid</h3>
             <ul class="coords-toggles">
               <li><label class="check-label"><input id="graticule-toggle" type="checkbox" /> Show grid lines</label></li>
