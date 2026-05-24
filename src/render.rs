@@ -1161,10 +1161,24 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
         place_nodes.sort_by_key(|(_, _, kind, _)| place_priority(kind));
         writeln!(out, r#"<g class="layer layer-places">"#).unwrap();
         for (lon, lat, kind, name) in &place_nodes {
-            if *lat < bbox.south || *lat > bbox.north || *lon < bbox.west || *lon > bbox.east {
+            let inside =
+                *lat >= bbox.south && *lat <= bbox.north && *lon >= bbox.west && *lon <= bbox.east;
+            let (plon, plat) = if inside {
+                (*lon, *lat)
+            } else if matches!(kind.as_str(), "city" | "town") {
+                // A city/town centre just outside a limited view: clamp to the
+                // edge (a touch inset) so the place is still labelled, toward
+                // where its centre lies. Smaller places out of view are dropped.
+                let ins_lat = (bbox.north - bbox.south) * 0.03;
+                let ins_lon = (bbox.east - bbox.west) * 0.03;
+                (
+                    lon.clamp(bbox.west + ins_lon, bbox.east - ins_lon),
+                    lat.clamp(bbox.south + ins_lat, bbox.north - ins_lat),
+                )
+            } else {
                 continue;
-            }
-            let (x, y) = project(*lon, *lat);
+            };
+            let (x, y) = project(plon, plat);
             let fs = place_size(width, kind);
             writeln!(
                 out,

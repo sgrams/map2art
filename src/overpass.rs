@@ -83,6 +83,19 @@ pub fn build_query(bbox: Bbox) -> String {
         bbox.north + gh,
         bbox.east + gw
     );
+    // A city/town is a single node at its centre, which for a limited view often
+    // sits just outside the box — so it'd never be fetched and the place would go
+    // unlabelled. Pull cities/towns from a fixed ~0.15° border around the view
+    // (catches the centre of the settlement a limited view sits inside, without
+    // cluttering normal maps); the renderer clamps an out-of-view one to the edge.
+    const PLACE_MARGIN_DEG: f64 = 0.15;
+    let ebp = format!(
+        "{},{},{},{}",
+        bbox.south - PLACE_MARGIN_DEG,
+        bbox.west - PLACE_MARGIN_DEG,
+        bbox.north + PLACE_MARGIN_DEG,
+        bbox.east + PLACE_MARGIN_DEG
+    );
     format!(
         "[out:json][timeout:60];\n\
          (\n\
@@ -99,6 +112,7 @@ pub fn build_query(bbox: Bbox) -> String {
            relation[\"type\"=\"multipolygon\"][\"leisure\"]({b});\n\
            relation[\"type\"=\"multipolygon\"][\"building\"]({b});\n\
            node[\"place\"]({b});\n\
+           node[\"place\"~\"^(city|town)$\"]({ebp});\n\
            node[\"place\"~\"^(sea|ocean|strait)$\"]({eb});\n\
            node[\"natural\"~\"^(bay|strait)$\"]({eb});\n\
          );\n\
