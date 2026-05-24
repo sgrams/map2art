@@ -768,10 +768,11 @@ circle.route-curve-handle:hover {
 }
 .label-edit-controls {
   display: grid;
-  grid-template-columns: 1fr 3em 2.2em auto auto auto;
+  grid-template-columns: 1fr 3em 2.2em auto auto auto auto;
   gap: 0.3rem;
   align-items: center;
 }
+.label-edit-row.label-hidden { opacity: 0.5; }
 .label-edit-controls select,
 .label-edit-controls input[type="number"] {
   background: #222;

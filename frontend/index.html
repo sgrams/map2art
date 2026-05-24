@@ -364,6 +364,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </div>
             <p class="overlays-hint">Paints every road one color, overriding the theme's road hierarchy — a clean monochrome network in your accent.</p>
 
+            <h3>Place importance</h3>
+            <label>Show
+              <select id="place-min-rank">
+                <option value="1">All places</option>
+                <option value="2">Hamlets &amp; larger</option>
+                <option value="3">Villages &amp; larger</option>
+                <option value="4">Towns &amp; larger</option>
+                <option value="5">Cities only</option>
+              </select>
+            </label>
+            <p class="overlays-hint">Drops smaller settlements (and intra-city suburbs / quarters) — keeps a large-area map readable. Hide specific labels below.</p>
+
             <h3>Label style</h3>
             <label class="check-label"><input id="label-style-toggle" type="checkbox" /> Override label color &amp; font</label>
             <div class="coords-grid">

@@ -40,6 +40,7 @@ const labelColorInput = $<HTMLInputElement>("label-color");
 const labelFontSelect = $<HTMLSelectElement>("label-font");
 const placeLabelListEl = $<HTMLUListElement>("place-label-list");
 const placeLabelEmptyEl = $<HTMLParagraphElement>("place-label-empty");
+const placeMinRankSelect = $<HTMLSelectElement>("place-min-rank");
 const graticuleToggle = $<HTMLInputElement>("graticule-toggle");
 const graticuleColorInput = $<HTMLInputElement>("graticule-color");
 const graticuleHaloColorInput = $<HTMLInputElement>("graticule-halo-color");
@@ -1265,7 +1266,7 @@ const syncLabelStyleEnabled = () => {
   labelColorInput.disabled = !labelStyleToggle.checked;
   labelFontSelect.disabled = !labelStyleToggle.checked;
 };
-for (const el of [labelStyleToggle, labelColorInput, labelFontSelect] as const) {
+for (const el of [labelStyleToggle, labelColorInput, labelFontSelect, placeMinRankSelect] as const) {
   el.addEventListener("input", () => recompose());
   el.addEventListener("change", () => recompose());
 }
@@ -3424,8 +3425,23 @@ type LabelOverride = {
   italic?: boolean;
   dx?: number;
   dy?: number;
+  /** Individually hide this label (kept in the editor list to un-hide). */
+  hidden?: boolean;
 };
 type LabelType = "place" | "water" | "street";
+
+/** Settlement significance by `place=*` kind, for the min-importance filter. */
+const PLACE_RANK: Record<string, number> = {
+  city: 5,
+  town: 4,
+  village: 3,
+  hamlet: 2,
+  suburb: 1,
+  quarter: 1,
+  neighbourhood: 1,
+  locality: 1,
+};
+const placeRank = (kind: string): number => PLACE_RANK[kind] ?? 1;
 const placeLabelOverrides = new Map<string, LabelOverride>();
 const streetLabelOverrides = new Map<string, LabelOverride>();
 /** Water labels are client-rendered (see renderWaterLabels); position lives in
@@ -3460,16 +3476,30 @@ const applyLabelStyleToText = (t: SVGTextElement, ov: LabelOverride) => {
   }
 };
 
-/** Tag + style the backend's place labels in the parsed map doc for editing. */
+/** Tag + style the backend's place labels in the parsed map doc for editing.
+ *  Applies the global min-importance filter (drops smaller settlements, off the
+ *  map and the editor list) and per-label hide (off the map, kept in the list). */
 const applyPlaceLabelOverrides = (doc: Document) => {
+  const minRank = parseInt(placeMinRankSelect.value, 10) || 1;
   const names: string[] = [];
   doc.querySelectorAll<SVGTextElement>("g.layer-places text.place").forEach((t) => {
     const name = (t.textContent ?? "").trim();
     if (!name) return;
+    // Drop insignificant places entirely (not even listed) for large-area maps.
+    const kindClass = Array.from(t.classList).find((c) => c.startsWith("place-"));
+    const kind = kindClass ? kindClass.slice("place-".length) : "";
+    if (placeRank(kind) < minRank) {
+      t.remove();
+      return;
+    }
     names.push(name);
+    const ov = placeLabelOverrides.get(name);
+    if (ov?.hidden) {
+      t.remove(); // hidden but still listed so it can be un-hidden
+      return;
+    }
     t.setAttribute("data-place-name", name);
     t.style.cursor = "move";
-    const ov = placeLabelOverrides.get(name);
     if (ov) applyLabelStyleToText(t, ov);
   });
   placeLabelNames = Array.from(new Set(names));
@@ -3483,9 +3513,13 @@ const applyStreetLabelOverrides = (doc: Document) => {
     const name = (t.textContent ?? "").trim();
     if (!name) return;
     names.push(name);
+    const ov = streetLabelOverrides.get(name);
+    if (ov?.hidden) {
+      t.remove();
+      return;
+    }
     t.setAttribute("data-street-name", name);
     t.style.cursor = "move";
-    const ov = streetLabelOverrides.get(name);
     if (ov) applyLabelStyleToText(t, ov);
   });
   streetLabelNames = Array.from(new Set(names));
@@ -3566,6 +3600,18 @@ const makeLabelRow = (type: LabelType, name: string): HTMLLIElement => {
   ital.addEventListener("change", () => setOv({ italic: ital.checked }));
   italRow.append(ital, "I");
 
+  const hideRow = document.createElement("label");
+  hideRow.className = "check-row";
+  const hide = document.createElement("input");
+  hide.type = "checkbox"; hide.checked = !!ov.hidden;
+  hide.title = "Hide this label";
+  hide.addEventListener("change", () => {
+    li.classList.toggle("label-hidden", hide.checked);
+    setOv({ hidden: hide.checked });
+  });
+  hideRow.append(hide, "hide");
+  if (ov.hidden) li.classList.add("label-hidden");
+
   const resetPos = document.createElement("button");
   resetPos.type = "button"; resetPos.className = "label-edit-reset";
   resetPos.textContent = "⟲"; resetPos.title = "Reset position";
@@ -3580,7 +3626,7 @@ const makeLabelRow = (type: LabelType, name: string): HTMLLIElement => {
     recompose();
   });
 
-  controls.append(font, size, color, boldRow, italRow, resetPos);
+  controls.append(font, size, color, boldRow, italRow, hideRow, resetPos);
   li.append(head, controls);
   return li;
 };
@@ -3646,6 +3692,10 @@ const renderWaterLabels = (
     if (f.kind === "sea" && !showSea) continue;
     if (f.kind === "lake" && !showLake) continue;
     if (f.kind === "river" && !showRiver) continue;
+    // Listed (so it can be un-hidden) even when individually hidden.
+    waterLabelNames.push(f.name);
+    const sov = waterLabelStyleOverrides.get(f.name) ?? {};
+    if (sov.hidden) continue;
     let x: number;
     let y: number;
     const override = waterOverrides.get(f.name);
@@ -3679,9 +3729,7 @@ const renderWaterLabels = (
       x = p.x;
       y = p.y;
     }
-    waterLabelNames.push(f.name);
     // Per-label style via inline style (beats the theme's water-label CSS).
-    const sov = waterLabelStyleOverrides.get(f.name) ?? {};
     let styleStr = "cursor:move";
     if (sov.font) styleStr += `;font-family:${sov.font}`;
     if (sov.color) styleStr += `;fill:${sov.color}`;
@@ -5181,6 +5229,7 @@ type SavedProject = {
   globalFont?: { enabled: boolean; font: string };
   roadAccent?: { enabled: boolean; color: string };
   coordFormat?: string;
+  placeMinRank?: string;
   coordPrecision?: number;
   poiLabel?: {
     font: string;
@@ -5279,6 +5328,7 @@ const saveProject = () => {
     globalFont: { enabled: globalFontToggle.checked, font: globalFontSelect.value },
     roadAccent: { enabled: roadAccentToggle.checked, color: roadAccentColorInput.value },
     coordFormat: coordFormatSelect.value,
+    placeMinRank: placeMinRankSelect.value,
     coordPrecision: parseFloat(coordPrecisionInput.value) || 4,
     poiLabel: {
       font: poiLabelFontSelect.value,
@@ -5411,6 +5461,7 @@ const applyProject = (p: SavedProject) => {
     syncRoadAccentEnabled();
   }
   if (p.coordFormat) coordFormatSelect.value = p.coordFormat;
+  if (p.placeMinRank) placeMinRankSelect.value = p.placeMinRank;
   if (typeof p.coordPrecision === "number") coordPrecisionInput.value = String(p.coordPrecision);
   if (p.poiLabel) {
     poiLabelFontSelect.value = p.poiLabel.font;
