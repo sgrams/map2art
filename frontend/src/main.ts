@@ -4171,12 +4171,24 @@ const composeSvg = (forExport = false): string | null => {
     );
   }
   if (textOutlineToggle.checked) {
-    // One outline (paint-order halo) on every text in the map — overrides the
-    // theme's and each element's own halo. Width is in canvas units (≈mm).
+    // One outline (paint-order halo) on every text — overrides the theme's and
+    // each element's own halo. Width is in canvas mm. Map labels (road/place/
+    // water) live inside the scaled map-content group, so their stroke-width
+    // must be divided by that scale to read as `ow` mm; canvas-space text (POI,
+    // coords, info strip, attribution, overlays, scale bar) uses ow directly.
     const ow = Math.max(0, parseFloat(textOutlineWidthInput.value) || 0);
+    const common =
+      `paint-order: stroke !important; stroke: ${textOutlineColorInput.value} !important; ` +
+      `stroke-linejoin: round !important;`;
+    const mapW = vbScale > 0 ? ow / vbScale : ow;
     overrideRules.push(
-      `text { paint-order: stroke !important; stroke: ${textOutlineColorInput.value} !important; ` +
-        `stroke-width: ${ow.toFixed(2)} !important; stroke-linejoin: round !important; }`,
+      `.layer-road-labels text, .layer-places text, .layer-water-labels text ` +
+        `{ ${common} stroke-width: ${mapW.toFixed(2)} !important; }`,
+    );
+    overrideRules.push(
+      `.poi text, .cross text, .graticule text, .info-strip text, ` +
+        `.attribution text, .overlay-text, .scalebar text ` +
+        `{ ${common} stroke-width: ${ow.toFixed(2)} !important; }`,
     );
   }
   const styleOverride = overrideRules.length
