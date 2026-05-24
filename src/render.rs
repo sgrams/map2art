@@ -119,10 +119,17 @@ fn mercator(lon: f64, lat: f64) -> (f64, f64) {
     (x, y)
 }
 
+/// Escape for both XML text content and attribute values. The quote escapes
+/// matter for attributes: some OSM names contain literal `"` (e.g. the bay
+/// `Zatoczka "Dzikiej Róży"`), which would otherwise terminate a `data-name="…"`
+/// attribute early and make the whole SVG unparseable — taking out every
+/// element after it (notably the place labels emitted last).
 fn escape_xml(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 /// Stitch a set of way node-id sequences into closed rings. A ring is
@@ -1240,5 +1247,17 @@ mod sea_tests {
         assert!(sea_fill_path(&[], 100.0, 100.0).is_empty());
         let outside = vec![vec![(-50.0, -50.0), (-40.0, -60.0)]];
         assert!(sea_fill_path(&outside, 100.0, 100.0).is_empty());
+    }
+
+    // A literal `"` in an OSM name (e.g. the bay `Zatoczka "Dzikiej Róży"`) must
+    // be escaped: emitted raw inside data-name="…" it terminates the attribute
+    // early and makes the whole SVG unparseable, dropping every element after it
+    // (notably the place labels, which are emitted last).
+    #[test]
+    fn escape_xml_escapes_attribute_quotes() {
+        let s = escape_xml(r#"Zatoczka "Dzikiej Róży""#);
+        assert!(!s.contains('"'), "raw quote left in: {s}");
+        assert_eq!(s, "Zatoczka &quot;Dzikiej Róży&quot;");
+        assert_eq!(escape_xml("a & b < c > d"), "a &amp; b &lt; c &gt; d");
     }
 }
