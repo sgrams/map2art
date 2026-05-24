@@ -110,10 +110,7 @@ struct RenderRequest {
     hidden: Option<Vec<String>>,
 }
 
-async fn post_render(
-    state: web::Data<AppState>,
-    body: web::Json<RenderRequest>,
-) -> impl Responder {
+async fn post_render(state: web::Data<AppState>, body: web::Json<RenderRequest>) -> impl Responder {
     let bbox = Bbox {
         south: body.south,
         west: body.west,
@@ -121,8 +118,7 @@ async fn post_render(
         east: body.east,
     };
     if bbox.south >= bbox.north || bbox.west >= bbox.east {
-        return HttpResponse::BadRequest()
-            .body("bbox must be ordered south<north, west<east");
+        return HttpResponse::BadRequest().body("bbox must be ordered south<north, west<east");
     }
 
     let data = match fetch_cached(&state, bbox).await {
@@ -160,9 +156,7 @@ async fn post_render(
         &hidden,
     );
 
-    HttpResponse::Ok()
-        .content_type("image/svg+xml")
-        .body(svg)
+    HttpResponse::Ok().content_type("image/svg+xml").body(svg)
 }
 
 #[derive(Deserialize)]
@@ -246,13 +240,10 @@ async fn post_raster(body: web::Json<RasterRequest>) -> impl Responder {
         Ok(b) => b,
         Err(e) => {
             error!("png encode failed: {e}");
-            return HttpResponse::InternalServerError()
-                .body(format!("png encode error: {e}"));
+            return HttpResponse::InternalServerError().body(format!("png encode error: {e}"));
         }
     };
-    HttpResponse::Ok()
-        .content_type("image/png")
-        .body(bytes)
+    HttpResponse::Ok().content_type("image/png").body(bytes)
 }
 
 async fn get_style(state: web::Data<AppState>) -> impl Responder {
@@ -265,18 +256,14 @@ struct PutStyle {
     css: String,
 }
 
-async fn put_style(
-    state: web::Data<AppState>,
-    body: web::Json<PutStyle>,
-) -> impl Responder {
+async fn put_style(state: web::Data<AppState>, body: web::Json<PutStyle>) -> impl Responder {
     {
         let mut guard = state.styles.write().await;
         *guard = body.css.clone();
     }
     if let Err(e) = tokio::fs::write(&state.styles_path, &body.css).await {
         error!("failed to persist styles: {e}");
-        return HttpResponse::InternalServerError()
-            .body(format!("write failed: {e}"));
+        return HttpResponse::InternalServerError().body(format!("write failed: {e}"));
     }
     HttpResponse::NoContent().finish()
 }
@@ -310,10 +297,7 @@ fn safe_theme_path(themes_dir: &Path, name: &str) -> Option<PathBuf> {
     Some(themes_dir.join(format!("{name}.css")))
 }
 
-async fn get_theme(
-    state: web::Data<AppState>,
-    path: web::Path<String>,
-) -> impl Responder {
+async fn get_theme(state: web::Data<AppState>, path: web::Path<String>) -> impl Responder {
     let name = path.into_inner();
     let Some(p) = safe_theme_path(&state.themes_dir, &name) else {
         return HttpResponse::BadRequest().body("invalid theme name");

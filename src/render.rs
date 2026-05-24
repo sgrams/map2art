@@ -129,10 +129,7 @@ fn escape_xml(s: &str) -> String {
 /// closed when its first and last node ids match. Ways are joined when
 /// an endpoint of one matches an endpoint of another (reversing the
 /// joined way when needed). Open chains are dropped.
-fn stitch_rings(
-    way_ids: &[i64],
-    ways: &HashMap<i64, Vec<i64>>,
-) -> Vec<Vec<i64>> {
+fn stitch_rings(way_ids: &[i64], ways: &HashMap<i64, Vec<i64>>) -> Vec<Vec<i64>> {
     let mut remaining: Vec<Vec<i64>> = way_ids
         .iter()
         .filter_map(|id| ways.get(id).cloned())
@@ -176,10 +173,7 @@ fn stitch_rings(
 /// Stitch ways into longer chains (open or closed). Used for coastlines:
 /// adjacent way segments are joined where endpoints match, producing fewer
 /// longer polylines instead of many disjoint segments.
-fn stitch_chains(
-    way_ids: &[i64],
-    ways: &HashMap<i64, Vec<i64>>,
-) -> Vec<Vec<i64>> {
+fn stitch_chains(way_ids: &[i64], ways: &HashMap<i64, Vec<i64>>) -> Vec<Vec<i64>> {
     let mut remaining: Vec<Vec<i64>> = way_ids
         .iter()
         .filter_map(|id| ways.get(id).cloned())
@@ -312,7 +306,11 @@ pub fn render_svg(
                     place_nodes.push((*lon, *lat, kind.clone(), name.clone()));
                 }
             }
-            Element::Way { id, nodes: refs, tags } => {
+            Element::Way {
+                id,
+                nodes: refs,
+                tags,
+            } => {
                 way_nodes.insert(*id, refs.clone());
                 way_tags.insert(*id, tags);
             }
@@ -397,8 +395,10 @@ pub fn render_svg(
     ];
     let mut way_by_layer: HashMap<&'static str, Vec<(String, Vec<(f64, f64)>, bool)>> =
         HashMap::new();
-    let mut mp_by_layer: HashMap<&'static str, Vec<(String, Vec<Vec<(f64, f64)>>, Vec<Vec<(f64, f64)>>)>> =
-        HashMap::new();
+    let mut mp_by_layer: HashMap<
+        &'static str,
+        Vec<(String, Vec<Vec<(f64, f64)>>, Vec<Vec<(f64, f64)>>)>,
+    > = HashMap::new();
 
     struct NamedRoad {
         id: i64,
@@ -411,7 +411,12 @@ pub fn render_svg(
     let mut coastline_way_ids: Vec<i64> = Vec::new();
 
     for el in &data.elements {
-        if let Element::Way { id, nodes: refs, tags } = el {
+        if let Element::Way {
+            id,
+            nodes: refs,
+            tags,
+        } = el
+        {
             if consumed_ways.contains(id) {
                 continue;
             }
@@ -466,10 +471,11 @@ pub fn render_svg(
     for mp in &multipolygons {
         let outer: Vec<Vec<(f64, f64)>> = mp.outer_rings.iter().map(|r| project_ring(r)).collect();
         let inner: Vec<Vec<(f64, f64)>> = mp.inner_rings.iter().map(|r| project_ring(r)).collect();
-        mp_by_layer
-            .entry(mp.info.layer)
-            .or_default()
-            .push((mp.info.subclass.clone(), outer, inner));
+        mp_by_layer.entry(mp.info.layer).or_default().push((
+            mp.info.subclass.clone(),
+            outer,
+            inner,
+        ));
     }
 
     // Stitch coastline ways into longer polylines.
@@ -604,14 +610,22 @@ pub fn render_svg(
                     }
                     let _ = write!(pts_str, "{x:.2},{y:.2}");
                 }
-                let tag = if *closed && filled { "polygon" } else { "polyline" };
+                let tag = if *closed && filled {
+                    "polygon"
+                } else {
+                    "polyline"
+                };
                 // Polylines must never inherit the SVG default `fill: black`
                 // — themes always intend them as stroked lines. We pin the
                 // attribute inline so this holds even if a renderer fails to
                 // apply the theme's `.layer-X polyline { fill: none }` rule
                 // (e.g. Firefox dropping descendant combinators when
                 // rasterizing an SVG loaded via <img>).
-                let fill_attr = if tag == "polyline" { r#" fill="none""# } else { "" };
+                let fill_attr = if tag == "polyline" {
+                    r#" fill="none""#
+                } else {
+                    ""
+                };
                 writeln!(
                     out,
                     r#"  <{tag} class="{subclass}"{fill_attr} points="{pts_str}"/>"#
@@ -634,9 +648,10 @@ pub fn render_svg(
         ];
         let mut road_labels: Vec<NamedRoad> = Vec::new();
         for (_, segments) in named_roads_by_name.drain() {
-            let Some(best) = segments.into_iter().max_by(|a, b| {
-                a.length.partial_cmp(&b.length).unwrap_or(Ordering::Equal)
-            }) else {
+            let Some(best) = segments
+                .into_iter()
+                .max_by(|a, b| a.length.partial_cmp(&b.length).unwrap_or(Ordering::Equal))
+            else {
                 continue;
             };
             if !labeled_kinds.contains(&best.road_kind.as_str()) {
@@ -652,13 +667,12 @@ pub fn render_svg(
         if !road_labels.is_empty() {
             writeln!(out, r#"<g class="layer layer-road-labels">"#).unwrap();
             for label in &road_labels {
-                let pts: Vec<(f64, f64)> = if label.points.first().unwrap().0
-                    > label.points.last().unwrap().0
-                {
-                    label.points.iter().rev().copied().collect()
-                } else {
-                    label.points.clone()
-                };
+                let pts: Vec<(f64, f64)> =
+                    if label.points.first().unwrap().0 > label.points.last().unwrap().0 {
+                        label.points.iter().rev().copied().collect()
+                    } else {
+                        label.points.clone()
+                    };
                 let mut d = String::new();
                 for (i, (x, y)) in pts.iter().enumerate() {
                     if i == 0 {
@@ -693,8 +707,12 @@ pub fn render_svg(
         let mut groups: HashMap<String, (Vec<(f64, f64)>, &'static str)> = HashMap::new();
         for el in &data.elements {
             match el {
-                Element::Way { nodes: refs, tags, .. } => {
-                    let Some(name) = tags.get("name") else { continue };
+                Element::Way {
+                    nodes: refs, tags, ..
+                } => {
+                    let Some(name) = tags.get("name") else {
+                        continue;
+                    };
                     let water_tag = tags.get("water").map(String::as_str);
                     let natural = tags.get("natural").map(String::as_str);
                     let waterway = tags.get("waterway").is_some();
@@ -729,7 +747,9 @@ pub fn render_svg(
                     if natural != Some("water") {
                         continue;
                     }
-                    let Some(name) = tags.get("name") else { continue };
+                    let Some(name) = tags.get("name") else {
+                        continue;
+                    };
                     let water_tag = tags.get("water").map(String::as_str);
                     let kind: &'static str = match water_tag {
                         Some("sea") | Some("ocean") | Some("bay") | Some("strait") => "sea",
@@ -790,11 +810,7 @@ pub fn render_svg(
         place_nodes.sort_by_key(|(_, _, kind, _)| place_priority(kind));
         writeln!(out, r#"<g class="layer layer-places">"#).unwrap();
         for (lon, lat, kind, name) in &place_nodes {
-            if *lat < bbox.south
-                || *lat > bbox.north
-                || *lon < bbox.west
-                || *lon > bbox.east
-            {
+            if *lat < bbox.south || *lat > bbox.north || *lon < bbox.west || *lon > bbox.east {
                 continue;
             }
             let (x, y) = project(*lon, *lat);

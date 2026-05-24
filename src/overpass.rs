@@ -54,10 +54,7 @@ pub struct RelationMember {
 }
 
 pub fn build_query(bbox: Bbox) -> String {
-    let b = format!(
-        "{},{},{},{}",
-        bbox.south, bbox.west, bbox.north, bbox.east
-    );
+    let b = format!("{},{},{},{}", bbox.south, bbox.west, bbox.north, bbox.east);
     format!(
         "[out:json][timeout:60];\n\
          (\n\
