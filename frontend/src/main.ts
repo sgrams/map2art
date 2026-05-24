@@ -4118,6 +4118,41 @@ const download = () => {
   URL.revokeObjectURL(url);
 };
 
+/** Expand every `<prefix>:where(<items>)` in the CSS to a comma-separated
+ *  list `<prefix> <item1>, <prefix> <item2>, …`.
+ *
+ *  resvg/usvg (0.45) does not understand the `:where()` pseudo-class, and
+ *  every theme uses it heavily for polygon/path fills (e.g.
+ *  `.layer-water :where(polygon, path) { fill: … }`). Without the
+ *  expansion, those rules are dropped by resvg and the polygons render
+ *  with the SVG default `fill: black`, so the PNG looks dramatically
+ *  different from the in-browser SVG. The expanded form is functionally
+ *  identical for browsers, so we can rewrite the styles before sending
+ *  the SVG to /api/raster without affecting the rest of the app. */
+const expandWhereCss = (css: string): string => {
+  return css.replace(
+    /([^,{}]*?)\s*:where\(([^)]*)\)/g,
+    (_match, prefix: string, items: string) => {
+      const list = items
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (list.length === 0) return prefix;
+      const head = prefix.trimEnd();
+      return list.map((item) => (head ? `${head} ${item}` : item)).join(", ");
+    },
+  );
+};
+
+/** Replace every `<style>` block in an SVG string with one whose `:where()`
+ *  selectors have been expanded. */
+const expandWhereInSvg = (svg: string): string => {
+  return svg.replace(
+    /<style[^>]*>([\s\S]*?)<\/style>/g,
+    (_match, body: string) => `<style>${expandWhereCss(body)}</style>`,
+  );
+};
+
 /** Resolve the canvas-bg color, defaulting to a visible cream so the PNG is
  *  never silently transparent or black. */
 const resolveCanvasBg = (): string => {
@@ -4150,7 +4185,7 @@ const downloadPng = async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        svg: composed,
+        svg: expandWhereInSvg(composed),
         width_px: widthPx,
         height_px: heightPx,
         background: resolveCanvasBg(),
