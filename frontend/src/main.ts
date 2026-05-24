@@ -3462,26 +3462,31 @@ const composeSvg = (forExport = false): string | null => {
     }
   }
 
+  // Clip the map content to its rectangle so thick edge strokes (e.g. ficus's
+  // heavy road strokes) don't bleed past the map into the canvas margins. The
+  // map block was switched from a nested <svg viewBox> (which auto-clips) to a
+  // <g transform> for the Firefox CSS cascade, which lost that implicit clip.
+  const mapClipDef =
+    `<clipPath id="map-clip"><rect x="${mx.toFixed(2)}" y="${my.toFixed(2)}" ` +
+    `width="${mw.toFixed(2)}" height="${mh.toFixed(2)}"/></clipPath>`;
+
   // Picker bearing rotates the displayed map; the bbox+content stay north-up
-  // (Mercator projection unchanged). The map content is clipped back to the
-  // original rectangle so it doesn't bleed into the canvas margins.
+  // (Mercator projection unchanged). When rotating, the whole lat/lng-anchored
+  // group is clipped to the map rectangle in canvas space, outside the rotate
+  // transform, so it doesn't bleed into the margins.
   const bearing = map.getBearing();
-  let rotationDefs = "";
+  const rotating = Math.abs(bearing) > 0.01;
   let rotationOpen = "";
   let rotationClose = "";
-  if (Math.abs(bearing) > 0.01) {
-    rotationDefs =
-      `<clipPath id="map-rotate-clip"><rect x="${mx.toFixed(2)}" y="${my.toFixed(2)}" width="${mw.toFixed(2)}" height="${mh.toFixed(2)}"/></clipPath>`;
+  if (rotating) {
     rotationOpen =
-      `  <g clip-path="url(#map-rotate-clip)">\n` +
+      `  <g clip-path="url(#map-clip)">\n` +
       `  <g transform="rotate(${(-bearing).toFixed(2)} ${(mx + mw / 2).toFixed(2)} ${(my + mh / 2).toFixed(2)})">\n`;
     rotationClose = `  </g>\n  </g>\n`;
   }
   defs = defs
-    ? defs.replace("</defs>", rotationDefs + "</defs>")
-    : rotationDefs
-      ? `<defs>${rotationDefs}</defs>`
-      : "";
+    ? defs.replace("</defs>", mapClipDef + "</defs>")
+    : `<defs>${mapClipDef}</defs>`;
 
   // Map content + everything anchored by lat/lng (graticule, cross, POIs,
   // routes) rotates together. Anything anchored to the canvas (border, scale
@@ -3504,6 +3509,11 @@ const composeSvg = (forExport = false): string | null => {
     `  <g class="map-content" transform="translate(${vbTx.toFixed(3)} ${vbTy.toFixed(3)}) scale(${vbScale.toFixed(6)})"${mapAttrs}>\n` +
     mapInner +
     `  </g>\n`;
+  // When not rotating, wrap the map in the clip group here; the rotation
+  // wrapper above already clips it (in canvas space) when rotating.
+  const clippedMap = rotating
+    ? mapBlock
+    : `  <g clip-path="url(#map-clip)">\n${mapBlock}  </g>\n`;
   const { defs: routeDefs, body: routeXml } = renderRoutes(mx, my, mw, mh, forExport);
   if (routeDefs) {
     defs = defs
@@ -3514,7 +3524,7 @@ const composeSvg = (forExport = false): string | null => {
   const waterLabelsXml = renderWaterLabels(mx, my, mw, mh, minDim);
   // Routes draw BEFORE POIs so markers sit on top of the line.
   const latLngAnchored =
-    mapBlock + graticuleXml + routeXml + waterLabelsXml + crossXml + poiXml;
+    clippedMap + graticuleXml + routeXml + waterLabelsXml + crossXml + poiXml;
   const wrappedLatLng = rotationOpen
     ? rotationOpen + latLngAnchored + rotationClose
     : latLngAnchored;
