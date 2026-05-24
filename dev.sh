@@ -35,8 +35,20 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-echo ">> starting backend (cargo run)..."
-(cd "$ROOT" && cargo run "$@") &
+# The backend is a compiled binary: unlike the Vite frontend it does NOT
+# hot-reload, so a `cargo run` started once stays frozen at that build while you
+# edit src/. Prefer `cargo watch` (auto-rebuild + restart on change) when it's
+# installed; otherwise fall back to a one-shot `cargo run` and say so loudly.
+if command -v cargo-watch >/dev/null; then
+  echo ">> starting backend (cargo watch -x run -- auto-rebuilds on changes)..."
+  (cd "$ROOT" && cargo watch -x "run -- $*") &
+else
+  echo ">> starting backend (cargo run)..."
+  echo ">> NOTE: cargo-watch not found — the backend will NOT rebuild on code"
+  echo ">>       changes. After editing src/, stop (Ctrl+C) and re-run ./dev.sh,"
+  echo ">>       or install auto-reload with: cargo install cargo-watch"
+  (cd "$ROOT" && cargo run "$@") &
+fi
 pids+=($!)
 
 echo ">> starting frontend (npm run dev)..."
