@@ -789,7 +789,29 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
                         }
                     }
                 }
-                _ => {}
+                Element::Node { lat, lon, tags, .. } => {
+                    // The open sea / oceans / bays are almost never `natural=water`
+                    // polygons in OSM — they're named by point features
+                    // (`place=sea|ocean|strait`, `natural=bay|strait`). Pick those
+                    // up so the Sea/ocean label toggle actually marks the sea.
+                    let Some(name) = tags.get("name") else {
+                        continue;
+                    };
+                    let is_sea = matches!(
+                        tags.get("place").map(String::as_str),
+                        Some("sea") | Some("ocean") | Some("strait")
+                    ) || matches!(
+                        tags.get("natural").map(String::as_str),
+                        Some("bay") | Some("strait")
+                    );
+                    if is_sea {
+                        groups
+                            .entry(name.clone())
+                            .or_insert_with(|| (Vec::new(), "sea"))
+                            .0
+                            .push((*lon, *lat));
+                    }
+                }
             }
         }
 
