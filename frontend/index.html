@@ -309,6 +309,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <li><label class="check-label"><input id="lake-labels-toggle" type="checkbox" /> Lake names</label></li>
               <li><label class="check-label"><input id="river-labels-toggle" type="checkbox" /> River / stream names</label></li>
             </ul>
+            <h3>Label style</h3>
+            <label class="check-label"><input id="label-style-toggle" type="checkbox" /> Override label color &amp; font</label>
+            <div class="coords-grid">
+              <label>Color <input id="label-color" type="color" value="#333333" /></label>
+              <label>Font <select id="label-font"></select></label>
+            </div>
+            <p class="overlays-hint">Applies one color and typeface to all map labels (streets, places, water), overriding the theme. Off = the theme's own label styling.</p>
             <p class="overlays-hint">Lat/Lng grid and the cross marker have moved to the <em>Coords</em> tab.</p>
             <p class="overlays-hint">Layer changes apply on the next render. Hide before rendering to save time on big bboxes.</p>
           </div>

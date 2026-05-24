@@ -35,6 +35,9 @@ const placeLabelsToggle = $<HTMLInputElement>("place-labels-toggle");
 const seaLabelsToggle = $<HTMLInputElement>("sea-labels-toggle");
 const lakeLabelsToggle = $<HTMLInputElement>("lake-labels-toggle");
 const riverLabelsToggle = $<HTMLInputElement>("river-labels-toggle");
+const labelStyleToggle = $<HTMLInputElement>("label-style-toggle");
+const labelColorInput = $<HTMLInputElement>("label-color");
+const labelFontSelect = $<HTMLSelectElement>("label-font");
 const graticuleToggle = $<HTMLInputElement>("graticule-toggle");
 const graticuleColorInput = $<HTMLInputElement>("graticule-color");
 const graticuleHaloColorInput = $<HTMLInputElement>("graticule-halo-color");
@@ -1138,6 +1141,22 @@ const FONT_FAMILIES: Array<{ label: string; css: string }> = [
   { label: "Brush (script)",     css: "'Brush Script MT', cursive" },
 ];
 const DEFAULT_FONT = FONT_FAMILIES[0].css;
+
+// Label-style picker shares the overlay font list.
+for (const f of FONT_FAMILIES) {
+  labelFontSelect.appendChild(new Option(f.label, f.css));
+}
+labelFontSelect.value = DEFAULT_FONT;
+const syncLabelStyleEnabled = () => {
+  labelColorInput.disabled = !labelStyleToggle.checked;
+  labelFontSelect.disabled = !labelStyleToggle.checked;
+};
+for (const el of [labelStyleToggle, labelColorInput, labelFontSelect] as const) {
+  el.addEventListener("input", () => recompose());
+  el.addEventListener("change", () => recompose());
+}
+labelStyleToggle.addEventListener("change", syncLabelStyleEnabled);
+syncLabelStyleEnabled();
 
 const overlays: Overlay[] = [];
 const selectedIds = new Set<string>();
@@ -3648,10 +3667,19 @@ const composeSvg = (forExport = false): string | null => {
     ? rotationOpen + latLngAnchored + rotationClose
     : latLngAnchored;
 
+  // Optional user override of every map label's color + typeface. Emitted as a
+  // <style> AFTER the theme CSS (and marked !important) so it wins over the
+  // theme's own label rules — for streets, places and water alike.
+  const labelOverride = labelStyleToggle.checked
+    ? `  <style>.layer-road-labels text, .layer-places text, .layer-water-labels text { ` +
+      `fill: ${labelColorInput.value} !important; font-family: ${labelFontSelect.value} !important; }</style>\n`
+    : "";
+
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" ` +
     `viewBox="0 0 ${cw} ${ch}" width="${cw}mm" height="${ch}mm">\n` +
     (hoistedStyle ? `  ${hoistedStyle}\n` : "") +
+    labelOverride +
     (defs ? `  ${defs}\n` : "") +
     `  <rect class="canvas-bg" width="${cw}" height="${ch}" fill="${canvasBg}"/>\n` +
     wrappedLatLng +
@@ -4652,6 +4680,7 @@ type SavedProject = {
   dpi: number;
   streetLabels: boolean;
   placeLabels: boolean;
+  labelStyle?: { override: boolean; color: string; font: string };
   seaLabels?: boolean;
   lakeLabels?: boolean;
   riverLabels?: boolean;
@@ -4724,6 +4753,11 @@ const saveProject = () => {
     dpi: parseFloat(dpiInput.value) || 300,
     streetLabels: streetLabelsToggle.checked,
     placeLabels: placeLabelsToggle.checked,
+    labelStyle: {
+      override: labelStyleToggle.checked,
+      color: labelColorInput.value,
+      font: labelFontSelect.value,
+    },
     seaLabels: seaLabelsToggle.checked,
     lakeLabels: lakeLabelsToggle.checked,
     riverLabels: riverLabelsToggle.checked,
@@ -4826,6 +4860,12 @@ const applyProject = (p: SavedProject) => {
   updateLockButton();
   streetLabelsToggle.checked = !!p.streetLabels;
   placeLabelsToggle.checked = !!p.placeLabels;
+  if (p.labelStyle) {
+    labelStyleToggle.checked = p.labelStyle.override;
+    labelColorInput.value = p.labelStyle.color;
+    labelFontSelect.value = p.labelStyle.font;
+    syncLabelStyleEnabled();
+  }
   seaLabelsToggle.checked = !!p.seaLabels;
   lakeLabelsToggle.checked = !!p.lakeLabels;
   riverLabelsToggle.checked = !!p.riverLabels;
