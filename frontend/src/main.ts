@@ -55,6 +55,21 @@ const canvasBgColorInput = $<HTMLInputElement>("canvas-bg-color");
 const borderToggle = $<HTMLInputElement>("border-toggle");
 const borderColorInput = $<HTMLInputElement>("border-color");
 const borderWidthInput = $<HTMLInputElement>("border-width");
+const borderStyleSelect = $<HTMLSelectElement>("border-style");
+const shadowToggle = $<HTMLInputElement>("shadow-toggle");
+const marginsControls = $<HTMLDivElement>("margins-controls");
+const marginTopInput = $<HTMLInputElement>("margin-top");
+const marginRightInput = $<HTMLInputElement>("margin-right");
+const marginBottomInput = $<HTMLInputElement>("margin-bottom");
+const marginLeftInput = $<HTMLInputElement>("margin-left");
+const cornerRadiusInput = $<HTMLInputElement>("corner-radius");
+const infostripControls = $<HTMLDivElement>("infostrip-controls");
+const infoCoordsToggle = $<HTMLInputElement>("info-coords");
+const infoDimsToggle = $<HTMLInputElement>("info-dims");
+const infoScaleToggle = $<HTMLInputElement>("info-scale");
+const infoDateToggle = $<HTMLInputElement>("info-date");
+const infoColorAutoToggle = $<HTMLInputElement>("info-color-auto");
+const infoColorInput = $<HTMLInputElement>("info-color");
 const freeformControls = $<HTMLDivElement>("freeform-controls");
 const freeformXInput = $<HTMLInputElement>("freeform-x");
 const freeformYInput = $<HTMLInputElement>("freeform-y");
@@ -792,6 +807,7 @@ const FRAMES: Frame[] = [
     description: "Thin black border around the map plus a metadata strip below — coordinates, scale, date.",
     marginTop: 0.05, marginRight: 0.05, marginBottom: 0.14, marginLeft: 0.05,
     canvasBg: "#f4efe2",
+    infoStrip: true,
     border: { enabled: true, color: "#222222", width: 0.5 },
   },
   {
@@ -832,9 +848,20 @@ const applyFrameDefaults = (f: Frame) => {
     borderColorInput.value = f.border.color;
     borderWidthInput.value = String(f.border.width);
   }
+  // Seed the editable margins from the preset (as percentages).
+  marginTopInput.value = String(Math.round(f.marginTop * 100));
+  marginRightInput.value = String(Math.round(f.marginRight * 100));
+  marginBottomInput.value = String(Math.round(f.marginBottom * 100));
+  marginLeftInput.value = String(Math.round(f.marginLeft * 100));
+  // Drop shadow defaults on for frames that prefer it (Polaroid) but is now a
+  // user toggle available on any frame.
+  shadowToggle.checked = f.decoration === "shadow";
   freeformControls.hidden = f.id !== "freeform";
-  if (f.id === "atlas") {
-    // Reset atlas strip to its default bottom-center position when picking atlas.
+  marginsControls.hidden = f.id === "freeform"; // freeform places the map by mm
+  infostripControls.hidden = !f.infoStrip;
+  if (f.infoStrip) {
+    // Reset the strip to its default bottom-center position when picking a
+    // frame that auto-prints metadata.
     atlasInfoXFrac = 0.5;
     atlasInfoYFrac = 0.93;
   }
@@ -918,15 +945,25 @@ const renderFrameOptions = () => {
 renderFrameOptions();
 applyFrameDefaults(currentFrame());
 
-// Wire border + freeform + canvas-bg inputs.
+// Wire border + freeform + canvas-bg + margins/corners/shadow/info-strip inputs.
 for (const el of [
-  borderToggle, borderColorInput, borderWidthInput,
+  borderToggle, borderColorInput, borderWidthInput, borderStyleSelect,
+  shadowToggle, cornerRadiusInput,
+  marginTopInput, marginRightInput, marginBottomInput, marginLeftInput,
+  infoCoordsToggle, infoDimsToggle, infoScaleToggle, infoDateToggle,
+  infoColorAutoToggle, infoColorInput,
   freeformXInput, freeformYInput, freeformWInput, freeformHInput,
   canvasBgOverrideToggle, canvasBgColorInput,
 ] as const) {
   el.addEventListener("input", () => recompose());
   el.addEventListener("change", () => recompose());
 }
+// The manual color picker only matters when auto-contrast is off.
+const syncInfoColorEnabled = () => {
+  infoColorInput.disabled = infoColorAutoToggle.checked;
+};
+infoColorAutoToggle.addEventListener("change", syncInfoColorEnabled);
+syncInfoColorEnabled();
 
 // -- Scale of the selection -------------------------------------------------
 
@@ -3106,13 +3143,15 @@ const renderAttribution = (
 
   let tx: number;
   let baseline: number;
-  let anchor: "start" | "end";
+  let anchor: "start" | "end" | "middle";
   switch (corner) {
-    case "tl": tx = pad;      anchor = "start"; baseline = pad + capH + gap; break;
-    case "tr": tx = cw - pad; anchor = "end";   baseline = pad + capH + gap; break;
-    case "bl": tx = pad;      anchor = "start"; baseline = ch - pad;         break;
+    case "tl": tx = pad;      anchor = "start";  baseline = pad + capH + gap; break;
+    case "tr": tx = cw - pad; anchor = "end";    baseline = pad + capH + gap; break;
+    case "tc": tx = cw / 2;   anchor = "middle"; baseline = pad + capH + gap; break;
+    case "bl": tx = pad;      anchor = "start";  baseline = ch - pad;         break;
+    case "bc": tx = cw / 2;   anchor = "middle"; baseline = ch - pad;         break;
     case "br":
-    default:   tx = cw - pad; anchor = "end";   baseline = ch - pad;         break;
+    default:   tx = cw - pad; anchor = "end";    baseline = ch - pad;         break;
   }
   if (attribAbsX !== null && attribAbsY !== null) {
     tx = attribAbsX;
@@ -3120,8 +3159,17 @@ const renderAttribution = (
     anchor = "start"; // freely placed — left-anchor for predictable drag
   }
   const ruleY = baseline - capH - gap;
-  const rx1 = anchor === "end" ? tx - ruleLen : tx;
-  const rx2 = anchor === "end" ? tx : tx + ruleLen;
+  let rx1: number, rx2: number;
+  if (anchor === "end") {
+    rx1 = tx - ruleLen;
+    rx2 = tx;
+  } else if (anchor === "middle") {
+    rx1 = tx - ruleLen / 2;
+    rx2 = tx + ruleLen / 2;
+  } else {
+    rx1 = tx;
+    rx2 = tx + ruleLen;
+  }
 
   return (
     `  <g class="attribution" style="cursor:move">\n` +
@@ -3221,6 +3269,21 @@ let lastMapAspect: number | null = null;
 let lastComposedUrl: string | null = null;
 
 /** Compute the map's pixel-mm placement inside the canvas given the frame. */
+/** Current map margins as fractions (0–0.45 per side), read from the editable
+ *  inputs. Seeded from the frame preset in applyFrameDefaults. */
+const effectiveMargins = () => {
+  const pct = (el: HTMLInputElement, fallback: number) => {
+    const v = parseFloat(el.value);
+    return Number.isFinite(v) ? Math.min(45, Math.max(0, v)) / 100 : fallback;
+  };
+  return {
+    top: pct(marginTopInput, 0.05),
+    right: pct(marginRightInput, 0.05),
+    bottom: pct(marginBottomInput, 0.05),
+    left: pct(marginLeftInput, 0.05),
+  };
+};
+
 const computeMapPlacement = (cw: number, ch: number, aspect: number) => {
   const f = currentFrame();
   if (f.id === "freeform") {
@@ -3231,10 +3294,11 @@ const computeMapPlacement = (cw: number, ch: number, aspect: number) => {
     return { mx, my, mw, mh };
   }
   const usingFrame = currentCanvas().id !== "match";
-  const mt = usingFrame ? ch * f.marginTop : 0;
-  const mb = usingFrame ? ch * f.marginBottom : 0;
-  const ml = usingFrame ? cw * f.marginLeft : 0;
-  const mr = usingFrame ? cw * f.marginRight : 0;
+  const m = effectiveMargins();
+  const mt = usingFrame ? ch * m.top : 0;
+  const mb = usingFrame ? ch * m.bottom : 0;
+  const ml = usingFrame ? cw * m.left : 0;
+  const mr = usingFrame ? cw * m.right : 0;
   const availW = Math.max(1, cw - ml - mr);
   const availH = Math.max(1, ch - mt - mb);
   let mw: number, mh: number;
@@ -3358,16 +3422,41 @@ const composeSvg = (forExport = false): string | null => {
     : (frame.canvasBg ?? themeBackgroundColor(cssEditor.value));
   const minDim = Math.min(cw, ch);
   let defs = "";
-  let mapAttrs = "";
-  let borderRect = "";
-  if (frame.decoration === "shadow") {
+  const mapAttrs = ""; // shadow is now applied to the clipped map (see below)
+
+  // Corner radius (mm), clamped so it can't exceed half the map.
+  const cornerR = Math.max(0, parseFloat(cornerRadiusInput.value) || 0);
+  const rx = Math.min(cornerR, mw / 2, mh / 2);
+
+  // Drop shadow (any frame; seeded on for frames that prefer it). The filter is
+  // applied to the *clipped* map below, so the shadow follows the (optionally
+  // rounded) edge and isn't clipped away by #map-clip.
+  const shadowOn = shadowToggle.checked;
+  if (shadowOn) {
     const d = (minDim * 0.005).toFixed(3);
-    defs = `<defs><filter id="map-shadow" x="-3%" y="-3%" width="106%" height="106%"><feDropShadow dx="0" dy="${d}" stdDeviation="${d}" flood-opacity="0.22"/></filter></defs>`;
-    mapAttrs = ` filter="url(#map-shadow)"`;
+    defs = `<defs><filter id="map-shadow" x="-8%" y="-8%" width="116%" height="116%"><feDropShadow dx="0" dy="${d}" stdDeviation="${d}" flood-opacity="0.22"/></filter></defs>`;
   }
+
+  let borderRect = "";
   if (borderToggle.checked) {
     const sw = Math.max(0.05, parseFloat(borderWidthInput.value) || 0.5);
-    borderRect = `  <rect x="${mx.toFixed(2)}" y="${my.toFixed(2)}" width="${mw.toFixed(2)}" height="${mh.toFixed(2)}" fill="none" stroke="${borderColorInput.value}" stroke-width="${sw}"/>\n`;
+    const col = borderColorInput.value;
+    const rect = (rxx: number, ryy: number, w: number, h: number, r: number) =>
+      `  <rect x="${rxx.toFixed(2)}" y="${ryy.toFixed(2)}" ` +
+      `width="${w.toFixed(2)}" height="${h.toFixed(2)}"` +
+      (r > 0 ? ` rx="${r.toFixed(2)}" ry="${r.toFixed(2)}"` : "") +
+      ` fill="none" stroke="${col}" stroke-width="${sw}"/>\n`;
+    if (borderStyleSelect.value === "inset") {
+      const gap = Math.max(sw * 2, minDim * 0.02);
+      borderRect = rect(mx + gap, my + gap, mw - 2 * gap, mh - 2 * gap, Math.max(0, rx - gap));
+    } else if (borderStyleSelect.value === "double") {
+      const gap = Math.max(sw * 2.5, minDim * 0.012);
+      borderRect =
+        rect(mx, my, mw, mh, rx) +
+        rect(mx + gap, my + gap, mw - 2 * gap, mh - 2 * gap, Math.max(0, rx - gap));
+    } else {
+      borderRect = rect(mx, my, mw, mh, rx);
+    }
   }
 
   let infoStripXml = "";
@@ -3380,28 +3469,48 @@ const composeSvg = (forExport = false): string | null => {
     const heightM = (b.north - b.south) * 111320;
     const fmtM = (m: number) =>
       m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`;
-    const coords =
-      `${toDMS(midLat, "N", "S")}  ·  ${toDMS(midLng, "E", "W")}`;
-    let dims = `${fmtM(widthM)}  ×  ${fmtM(heightM)}`;
+
+    // Line 1: coordinates. Line 2: whichever of dims / scale / date are on.
+    const line1 = infoCoordsToggle.checked
+      ? `${toDMS(midLat, "N", "S")}  ·  ${toDMS(midLng, "E", "W")}`
+      : "";
+    const parts2: string[] = [];
+    if (infoDimsToggle.checked) parts2.push(`${fmtM(widthM)}  ×  ${fmtM(heightM)}`);
     const c = currentCanvas();
-    if (c.id !== "match" && mw > 0 && widthM > 0) {
+    if (infoScaleToggle.checked && c.id !== "match" && mw > 0 && widthM > 0) {
       const ratio = (widthM * 1000) / mw;
-      if (Number.isFinite(ratio) && ratio > 0) {
-        dims += `   ·   1:${formatScaleRatio(ratio)}`;
-      }
+      if (Number.isFinite(ratio) && ratio > 0) parts2.push(`1:${formatScaleRatio(ratio)}`);
     }
+    if (infoDateToggle.checked) {
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      parts2.push(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
+    }
+    const line2 = parts2.join("   ·   ");
+
+    // Auto-derive a legible color from the canvas background (so the strip
+    // stays visible on dark themes), or use the manual picker.
+    const ink = infoColorAutoToggle.checked ? contrastingInk(canvasBg) : infoColorInput.value;
     const fs1 = minDim * 0.022;
     const fs2 = minDim * 0.018;
     const cxText = cw * atlasInfoXFrac;
     const cyText = ch * atlasInfoYFrac;
-    // Line 1 above the anchor point, line 2 below.
-    const y1 = cyText - fs2 * 0.5;
-    const y2 = cyText + fs1 * 0.8;
-    infoStripXml =
-      `  <g class="info-strip" font-family="'Courier New', ui-monospace, monospace" fill="#3a3424" text-anchor="middle" style="cursor:move">\n` +
-      `    <text x="${cxText.toFixed(2)}" y="${y1.toFixed(2)}" font-size="${fs1.toFixed(2)}" letter-spacing="0.08em">${escapeXml(coords)}</text>\n` +
-      `    <text x="${cxText.toFixed(2)}" y="${y2.toFixed(2)}" font-size="${fs2.toFixed(2)}" letter-spacing="0.12em">${escapeXml(dims)}</text>\n` +
-      `  </g>\n`;
+    const mkText = (txt: string, y: number, fs: number, ls: string) =>
+      `    <text x="${cxText.toFixed(2)}" y="${y.toFixed(2)}" font-size="${fs.toFixed(2)}" letter-spacing="${ls}">${escapeXml(txt)}</text>\n`;
+    let body = "";
+    if (line1 && line2) {
+      body = mkText(line1, cyText - fs2 * 0.5, fs1, "0.08em") + mkText(line2, cyText + fs1 * 0.8, fs2, "0.12em");
+    } else if (line1) {
+      body = mkText(line1, cyText + fs1 * 0.3, fs1, "0.08em");
+    } else if (line2) {
+      body = mkText(line2, cyText + fs2 * 0.3, fs2, "0.12em");
+    }
+    if (body) {
+      infoStripXml =
+        `  <g class="info-strip" font-family="'Courier New', ui-monospace, monospace" fill="${ink}" text-anchor="middle" style="cursor:move">\n` +
+        body +
+        `  </g>\n`;
+    }
   }
 
   // Lat/Lng graticule (lines + optional edge labels) drawn over the map.
@@ -3468,7 +3577,9 @@ const composeSvg = (forExport = false): string | null => {
   // <g transform> for the Firefox CSS cascade, which lost that implicit clip.
   const mapClipDef =
     `<clipPath id="map-clip"><rect x="${mx.toFixed(2)}" y="${my.toFixed(2)}" ` +
-    `width="${mw.toFixed(2)}" height="${mh.toFixed(2)}"/></clipPath>`;
+    `width="${mw.toFixed(2)}" height="${mh.toFixed(2)}"` +
+    (rx > 0 ? ` rx="${rx.toFixed(2)}" ry="${rx.toFixed(2)}"` : "") +
+    `/></clipPath>`;
 
   // Picker bearing rotates the displayed map; the bbox+content stay north-up
   // (Mercator projection unchanged). When rotating, the whole lat/lng-anchored
@@ -3509,11 +3620,19 @@ const composeSvg = (forExport = false): string | null => {
     `  <g class="map-content" transform="translate(${vbTx.toFixed(3)} ${vbTy.toFixed(3)}) scale(${vbScale.toFixed(6)})"${mapAttrs}>\n` +
     mapInner +
     `  </g>\n`;
-  // When not rotating, wrap the map in the clip group here; the rotation
-  // wrapper above already clips it (in canvas space) when rotating.
-  const clippedMap = rotating
-    ? mapBlock
-    : `  <g clip-path="url(#map-clip)">\n${mapBlock}  </g>\n`;
+  // When not rotating, wrap the map in the clip group here (the rotation
+  // wrapper above already clips it in canvas space when rotating), then wrap
+  // that in the shadow filter so the drop shadow follows the clipped/rounded
+  // edge instead of being clipped away.
+  let clippedMap: string;
+  if (rotating) {
+    clippedMap = mapBlock;
+  } else {
+    clippedMap = `  <g clip-path="url(#map-clip)">\n${mapBlock}  </g>\n`;
+    if (shadowOn) {
+      clippedMap = `  <g filter="url(#map-shadow)">\n${clippedMap}  </g>\n`;
+    }
+  }
   const { defs: routeDefs, body: routeXml } = renderRoutes(mx, my, mw, mh, forExport);
   if (routeDefs) {
     defs = defs
@@ -4562,6 +4681,18 @@ type SavedProject = {
     y: number;
   };
   border?: { enabled: boolean; color: string; width: number };
+  borderStyle?: string;
+  shadow?: boolean;
+  margins?: { top: number; right: number; bottom: number; left: number };
+  cornerRadius?: number;
+  infoStrip?: {
+    coords: boolean;
+    dims: boolean;
+    scale: boolean;
+    date: boolean;
+    colorAuto: boolean;
+    color: string;
+  };
   freeform?: { x: number; y: number; w: number; h: number };
   atlasInfo?: { xFrac: number; yFrac: number };
   canvasBg?: { override: boolean; color: string };
@@ -4629,6 +4760,23 @@ const saveProject = () => {
       enabled: borderToggle.checked,
       color: borderColorInput.value,
       width: parseFloat(borderWidthInput.value) || 0.5,
+    },
+    borderStyle: borderStyleSelect.value,
+    shadow: shadowToggle.checked,
+    margins: {
+      top: parseFloat(marginTopInput.value) || 0,
+      right: parseFloat(marginRightInput.value) || 0,
+      bottom: parseFloat(marginBottomInput.value) || 0,
+      left: parseFloat(marginLeftInput.value) || 0,
+    },
+    cornerRadius: parseFloat(cornerRadiusInput.value) || 0,
+    infoStrip: {
+      coords: infoCoordsToggle.checked,
+      dims: infoDimsToggle.checked,
+      scale: infoScaleToggle.checked,
+      date: infoDateToggle.checked,
+      colorAuto: infoColorAutoToggle.checked,
+      color: infoColorInput.value,
     },
     freeform: {
       x: parseFloat(freeformXInput.value) || 20,
@@ -4752,6 +4900,33 @@ const applyProject = (p: SavedProject) => {
   if (p.frame && FRAMES.some((f) => f.id === p.frame)) {
     currentFrameId = p.frame;
     renderFrameOptions();
+  }
+  // Seed margins/shadow/visibility from the frame preset, then override with
+  // any saved per-project values.
+  applyFrameDefaults(currentFrame());
+  if (p.margins) {
+    marginTopInput.value = String(p.margins.top);
+    marginRightInput.value = String(p.margins.right);
+    marginBottomInput.value = String(p.margins.bottom);
+    marginLeftInput.value = String(p.margins.left);
+  }
+  if (typeof p.cornerRadius === "number") cornerRadiusInput.value = String(p.cornerRadius);
+  if (p.borderStyle) borderStyleSelect.value = p.borderStyle;
+  if (typeof p.shadow === "boolean") shadowToggle.checked = p.shadow;
+  if (p.infoStrip) {
+    infoCoordsToggle.checked = p.infoStrip.coords;
+    infoDimsToggle.checked = p.infoStrip.dims;
+    infoScaleToggle.checked = p.infoStrip.scale;
+    infoDateToggle.checked = p.infoStrip.date;
+    infoColorAutoToggle.checked = p.infoStrip.colorAuto;
+    infoColorInput.value = p.infoStrip.color;
+  }
+  syncInfoColorEnabled();
+  // applyFrameDefaults reset the info-strip position above; restore the saved
+  // drag position again so it survives loading.
+  if (p.atlasInfo) {
+    atlasInfoXFrac = p.atlasInfo.xFrac;
+    atlasInfoYFrac = p.atlasInfo.yFrac;
   }
 
   canvasSelect.value = p.canvas.id;

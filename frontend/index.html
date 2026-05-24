@@ -132,11 +132,53 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <p class="overlays-hint">Position and size of the map inside the canvas, in millimetres. Map content fits the rectangle with letterboxing if the aspect ratios don't match.</p>
             </div>
 
-            <h3>Map border</h3>
+            <div id="margins-controls">
+              <h3>Margins (%)</h3>
+              <div class="coords-grid">
+                <label>Top <input id="margin-top" type="number" min="0" max="45" step="1" value="5" /></label>
+                <label>Right <input id="margin-right" type="number" min="0" max="45" step="1" value="5" /></label>
+                <label>Bottom <input id="margin-bottom" type="number" min="0" max="45" step="1" value="5" /></label>
+                <label>Left <input id="margin-left" type="number" min="0" max="45" step="1" value="5" /></label>
+              </div>
+              <p class="overlays-hint">Seeded from the frame preset — tweak to nudge how the map sits in the canvas. (Canvas “Match map” ignores margins.)</p>
+            </div>
+
+            <h3>Corners</h3>
+            <div class="coords-grid">
+              <label>Radius (mm) <input id="corner-radius" type="number" min="0" step="1" value="0" /></label>
+            </div>
+            <p class="overlays-hint">Rounds the map, its border and shadow. 0 = square corners.</p>
+
+            <h3>Map border &amp; shadow</h3>
             <label class="check-label"><input id="border-toggle" type="checkbox" /> Show border around the map</label>
             <div class="coords-grid">
               <label>Color <input id="border-color" type="color" value="#222222" /></label>
               <label>Width (mm) <input id="border-width" type="number" step="0.1" min="0.1" value="0.5" /></label>
+            </div>
+            <div class="coords-grid">
+              <label>Style
+                <select id="border-style">
+                  <option value="single">Single</option>
+                  <option value="double">Double (mat)</option>
+                  <option value="inset">Inset</option>
+                </select>
+              </label>
+            </div>
+            <label class="check-label"><input id="shadow-toggle" type="checkbox" /> Drop shadow under the map</label>
+
+            <div id="infostrip-controls" hidden>
+              <h3>Info strip</h3>
+              <div class="coords-grid">
+                <label class="check-label"><input id="info-coords" type="checkbox" checked /> Coordinates</label>
+                <label class="check-label"><input id="info-dims" type="checkbox" checked /> Dimensions</label>
+                <label class="check-label"><input id="info-scale" type="checkbox" checked /> Scale</label>
+                <label class="check-label"><input id="info-date" type="checkbox" checked /> Date</label>
+              </div>
+              <label class="check-label"><input id="info-color-auto" type="checkbox" checked /> Auto text color (contrast with canvas)</label>
+              <div class="coords-grid">
+                <label>Color <input id="info-color" type="color" value="#3a3424" /></label>
+              </div>
+              <p class="overlays-hint">Auto picks a legible color from the canvas background so the strip stays visible on dark themes.</p>
             </div>
 
             <h3>Attribution</h3>
@@ -144,8 +186,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               Corner:
               <select id="attrib-corner">
                 <option value="br">Bottom-right</option>
+                <option value="bc">Bottom-center</option>
                 <option value="bl">Bottom-left</option>
                 <option value="tr">Top-right</option>
+                <option value="tc">Top-center</option>
                 <option value="tl">Top-left</option>
               </select>
             </label>
