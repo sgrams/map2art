@@ -2974,36 +2974,103 @@ const renderScaleBar = (
 let attribAbsX: number | null = null;
 let attribAbsY: number | null = null;
 
+const ATTRIBUTION_TEXT = "Map data from OpenStreetMap";
+
+/** Parse a CSS color (`#rgb`, `#rrggbb`, or `rgb[a](…)`) to [r,g,b] 0–255.
+ *  Returns null for anything else (named colors, gradients, …). */
+const parseColor = (c: string): [number, number, number] | null => {
+  const s = c.trim().toLowerCase();
+  let m = s.match(/^#([0-9a-f]{3})$/);
+  if (m) {
+    const h = m[1];
+    return [
+      parseInt(h[0] + h[0], 16),
+      parseInt(h[1] + h[1], 16),
+      parseInt(h[2] + h[2], 16),
+    ];
+  }
+  m = s.match(/^#([0-9a-f]{6})$/);
+  if (m) {
+    const h = m[1];
+    return [
+      parseInt(h.slice(0, 2), 16),
+      parseInt(h.slice(2, 4), 16),
+      parseInt(h.slice(4, 6), 16),
+    ];
+  }
+  m = s.match(/^rgba?\(([^)]+)\)$/);
+  if (m) {
+    const parts = m[1].split(/[,/\s]+/).map((p) => parseFloat(p));
+    if (parts.length >= 3 && parts.slice(0, 3).every((n) => Number.isFinite(n))) {
+      return [parts[0], parts[1], parts[2]];
+    }
+  }
+  return null;
+};
+
+/** Soft ink that contrasts with `bg`: a muted near-black on light paper, a
+ *  soft off-white on dark paper. This is what makes the attribution adapt to
+ *  every current and future theme — themes only have to set `.background`. */
+const contrastingInk = (bg: string): string => {
+  const rgb = parseColor(bg);
+  // Perceptual-ish luminance (sRGB weights); assume light paper if unknown.
+  const lum = rgb
+    ? (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255
+    : 1;
+  return lum > 0.5 ? "#33332f" : "#ededea";
+};
+
+/** Footer-style credit: a thin hairline rule with a small caption beneath it,
+ *  both auto-coloured to contrast with the paper. The text halo is painted in
+ *  the paper colour so it's invisible on the margin but knocks out a clean
+ *  outline if the credit is dragged over the busy map. */
 const renderAttribution = (
   cw: number,
   ch: number,
   minDim: number,
   corner: string,
+  bg: string,
 ): string => {
-  const pad = minDim * 0.014;
-  const fs = Math.max(2, minDim * 0.014);
-  const halo = (fs * 0.22).toFixed(2);
-  let x: number;
-  let y: number;
+  const pad = minDim * 0.02;
+  const fs = Math.max(2, minDim * 0.013);
+  const capH = fs * 0.72; // approx cap height above the baseline
+  const gap = fs * 0.6; // space between the rule and the caption cap-top
+  const ruleW = Math.max(0.25, minDim * 0.0016);
+  const ruleLen = ATTRIBUTION_TEXT.length * fs * 0.52; // ≈ caption width
+  const ink = contrastingInk(bg);
+  const halo = (fs * 0.18).toFixed(2);
+  const ls = (fs * 0.03).toFixed(3);
+
+  let tx: number;
+  let baseline: number;
   let anchor: "start" | "end";
   switch (corner) {
-    case "tl": x = pad;       y = pad + fs;    anchor = "start"; break;
-    case "tr": x = cw - pad;  y = pad + fs;    anchor = "end";   break;
-    case "bl": x = pad;       y = ch - pad;    anchor = "start"; break;
+    case "tl": tx = pad;      anchor = "start"; baseline = pad + capH + gap; break;
+    case "tr": tx = cw - pad; anchor = "end";   baseline = pad + capH + gap; break;
+    case "bl": tx = pad;      anchor = "start"; baseline = ch - pad;         break;
     case "br":
-    default:   x = cw - pad;  y = ch - pad;    anchor = "end";   break;
+    default:   tx = cw - pad; anchor = "end";   baseline = ch - pad;         break;
   }
   if (attribAbsX !== null && attribAbsY !== null) {
-    x = attribAbsX;
-    y = attribAbsY;
+    tx = attribAbsX;
+    baseline = attribAbsY;
     anchor = "start"; // freely placed — left-anchor for predictable drag
   }
+  const ruleY = baseline - capH - gap;
+  const rx1 = anchor === "end" ? tx - ruleLen : tx;
+  const rx2 = anchor === "end" ? tx : tx + ruleLen;
+
   return (
-    `  <text class="attribution" x="${x.toFixed(2)}" y="${y.toFixed(2)}" ` +
+    `  <g class="attribution" style="cursor:move">\n` +
+    `    <line class="attribution-rule" x1="${rx1.toFixed(2)}" y1="${ruleY.toFixed(2)}" ` +
+    `x2="${rx2.toFixed(2)}" y2="${ruleY.toFixed(2)}" ` +
+    `stroke="${ink}" stroke-width="${ruleW.toFixed(2)}" opacity="0.7"/>\n` +
+    `    <text class="attribution-text" x="${tx.toFixed(2)}" y="${baseline.toFixed(2)}" ` +
     `font-size="${fs.toFixed(2)}" font-family="Helvetica, Arial, sans-serif" ` +
-    `fill="#555" text-anchor="${anchor}" ` +
-    `paint-order="stroke" stroke="#ffffff" stroke-width="${halo}" ` +
-    `style="cursor:move">Map data from OpenStreetMap</text>\n`
+    `letter-spacing="${ls}" fill="${ink}" text-anchor="${anchor}" ` +
+    `paint-order="stroke" stroke="${bg}" stroke-width="${halo}">` +
+    `${ATTRIBUTION_TEXT}</text>\n` +
+    `  </g>\n`
   );
 };
 
@@ -3404,7 +3471,7 @@ const composeSvg = (forExport = false): string | null => {
         )
       : "") +
     (overlaysXml ? `  ${overlaysXml}\n` : "") +
-    renderAttribution(cw, ch, minDim, attribCornerSelect.value) +
+    renderAttribution(cw, ch, minDim, attribCornerSelect.value, canvasBg) +
     (!forExport && currentFrame().id === "freeform"
       ? renderFreeformHandles(mx, my, mw, mh, minDim)
       : "") +
@@ -3780,15 +3847,17 @@ const bindScaleBarDrag = () => {
 const bindAttributionDrag = () => {
   const svg = previewEl.querySelector<SVGSVGElement>("svg");
   if (!svg) return;
-  const a = svg.querySelector<SVGTextElement>("text.attribution");
-  if (!a) return;
+  const g = svg.querySelector<SVGGElement>("g.attribution");
+  const txt = g?.querySelector<SVGTextElement>("text.attribution-text");
+  if (!g || !txt) return;
 
-  a.addEventListener("pointerdown", (e) => {
+  g.addEventListener("pointerdown", (e) => {
     e.stopPropagation();
     e.preventDefault();
     const startSvg = toSvgPoint(svg, e.clientX, e.clientY);
-    const sX = parseFloat(a.getAttribute("x") ?? "0");
-    const sY = parseFloat(a.getAttribute("y") ?? "0");
+    // Free placement tracks the caption's baseline origin; the rule follows it.
+    const sX = parseFloat(txt.getAttribute("x") ?? "0");
+    const sY = parseFloat(txt.getAttribute("y") ?? "0");
     let raf: number | null = null;
 
     const onMove = (ev: PointerEvent) => {
