@@ -3257,7 +3257,13 @@ const composeSvg = (forExport = false): string | null => {
   // in the exported PNG.
   let hoistedStyle = "";
   doc.querySelectorAll("style").forEach((s) => {
-    hoistedStyle += `<style>${s.textContent ?? ""}</style>`;
+    // Strip CSS comments before re-emitting. Every theme's SPDX header contains
+    // `<sjg@haxx.space>`: its `<` breaks strict XML parsers (a saved .svg opened
+    // in a browser — "error parsing attribute name") and its `@` breaks resvg's
+    // CSS parser (the PNG export). The in-app preview tolerates it because
+    // innerHTML parses <style> as raw text, but the exported SVG/PNG must be
+    // clean, so we scrub here at the single hoist point.
+    hoistedStyle += `<style>${stripCssComments(s.textContent ?? "")}</style>`;
     s.remove();
   });
   const mapInner = mapSvgEl.innerHTML;
@@ -4300,12 +4306,25 @@ const expandWhereCss = (css: string): string => {
   );
 };
 
-/** Replace every `<style>` block in an SVG string with one whose `:where()`
- *  selectors have been expanded. */
+/** Strip `/* … *​/` comments from CSS.
+ *
+ *  resvg/usvg (0.45) does NOT skip CSS comments inside a `<style>` block, so a
+ *  bare `@` in one — e.g. the `sjg@haxx.space` in every theme's SPDX header —
+ *  is misparsed as an at-rule and aborts the entire SVG parse with
+ *  `expected a whitespace not '@'`, producing an all-black PNG. Browsers strip
+ *  comments fine and the source files must keep their SPDX headers for REUSE,
+ *  so we only scrub the resvg-bound copy here. */
+const stripCssComments = (css: string): string =>
+  css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+/** Replace every `<style>` block in an SVG string with one whose comments are
+ *  stripped and whose `:where()` selectors have been expanded — both needed
+ *  for resvg/usvg to parse and render the theme CSS the same as the browser. */
 const expandWhereInSvg = (svg: string): string => {
   return svg.replace(
     /<style[^>]*>([\s\S]*?)<\/style>/g,
-    (_match, body: string) => `<style>${expandWhereCss(body)}</style>`,
+    (_match, body: string) =>
+      `<style>${expandWhereCss(stripCssComments(body))}</style>`,
   );
 };
 
