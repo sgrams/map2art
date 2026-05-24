@@ -96,6 +96,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </div>
             <p class="overlays-hint">Overrides the theme's and each element's own font while on. Off = per-element fonts (theme labels, POI, coords) apply.</p>
 
+            <h3>Text outline</h3>
+            <label class="check-label"><input id="text-outline-toggle" type="checkbox" /> Outline all text</label>
+            <div class="coords-grid">
+              <label>Color <input id="text-outline-color" type="color" value="#ffffff" /></label>
+              <label>Width (mm) <input id="text-outline-width" type="number" min="0" step="0.1" value="0.4" /></label>
+            </div>
+            <p class="overlays-hint">A single halo behind every label, POI, coordinate and the attribution — overrides per-element/theme outlines while on. Off = each element's own outline.</p>
+
             <h3>Map proportion</h3>
             <div class="style-row">
               <select id="paper"></select>

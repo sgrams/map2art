@@ -105,6 +105,9 @@ const routeEmptyEl = $<HTMLParagraphElement>("route-empty");
 const resetRectBtn = $<HTMLButtonElement>("reset-rect-btn");
 const themeSelect = $<HTMLSelectElement>("theme");
 const themeGalleryEl = $<HTMLDivElement>("theme-gallery");
+const textOutlineToggle = $<HTMLInputElement>("text-outline-toggle");
+const textOutlineColorInput = $<HTMLInputElement>("text-outline-color");
+const textOutlineWidthInput = $<HTMLInputElement>("text-outline-width");
 const globalFontToggle = $<HTMLInputElement>("global-font-toggle");
 const globalFontSelect = $<HTMLSelectElement>("global-font");
 const roadAccentToggle = $<HTMLInputElement>("road-accent-toggle");
@@ -1294,8 +1297,15 @@ const syncRoadAccentEnabled = () => {
 };
 roadAccentToggle.addEventListener("change", syncRoadAccentEnabled);
 syncRoadAccentEnabled();
+const syncTextOutlineEnabled = () => {
+  textOutlineColorInput.disabled = !textOutlineToggle.checked;
+  textOutlineWidthInput.disabled = !textOutlineToggle.checked;
+};
+textOutlineToggle.addEventListener("change", syncTextOutlineEnabled);
+syncTextOutlineEnabled();
 for (const el of [
   globalFontToggle, globalFontSelect, roadAccentToggle, roadAccentColorInput,
+  textOutlineToggle, textOutlineColorInput, textOutlineWidthInput,
 ] as const) {
   el.addEventListener("input", () => recompose());
   el.addEventListener("change", () => recompose());
@@ -4160,6 +4170,15 @@ const composeSvg = (forExport = false): string | null => {
         `{ font-family: ${globalFontSelect.value} !important; }`,
     );
   }
+  if (textOutlineToggle.checked) {
+    // One outline (paint-order halo) on every text in the map — overrides the
+    // theme's and each element's own halo. Width is in canvas units (≈mm).
+    const ow = Math.max(0, parseFloat(textOutlineWidthInput.value) || 0);
+    overrideRules.push(
+      `text { paint-order: stroke !important; stroke: ${textOutlineColorInput.value} !important; ` +
+        `stroke-width: ${ow.toFixed(2)} !important; stroke-linejoin: round !important; }`,
+    );
+  }
   const styleOverride = overrideRules.length
     ? `  <style>${overrideRules.join(" ")}</style>\n`
     : "";
@@ -5228,6 +5247,7 @@ type SavedProject = {
   labelStyle?: { override: boolean; color: string; font: string };
   globalFont?: { enabled: boolean; font: string };
   roadAccent?: { enabled: boolean; color: string };
+  textOutline?: { enabled: boolean; color: string; width: number };
   coordFormat?: string;
   placeMinRank?: string;
   coordPrecision?: number;
@@ -5327,6 +5347,11 @@ const saveProject = () => {
     },
     globalFont: { enabled: globalFontToggle.checked, font: globalFontSelect.value },
     roadAccent: { enabled: roadAccentToggle.checked, color: roadAccentColorInput.value },
+    textOutline: {
+      enabled: textOutlineToggle.checked,
+      color: textOutlineColorInput.value,
+      width: parseFloat(textOutlineWidthInput.value) || 0.4,
+    },
     coordFormat: coordFormatSelect.value,
     placeMinRank: placeMinRankSelect.value,
     coordPrecision: parseFloat(coordPrecisionInput.value) || 4,
@@ -5459,6 +5484,12 @@ const applyProject = (p: SavedProject) => {
     roadAccentToggle.checked = p.roadAccent.enabled;
     roadAccentColorInput.value = p.roadAccent.color;
     syncRoadAccentEnabled();
+  }
+  if (p.textOutline) {
+    textOutlineToggle.checked = p.textOutline.enabled;
+    textOutlineColorInput.value = p.textOutline.color;
+    textOutlineWidthInput.value = String(p.textOutline.width);
+    syncTextOutlineEnabled();
   }
   if (p.coordFormat) coordFormatSelect.value = p.coordFormat;
   if (p.placeMinRank) placeMinRankSelect.value = p.placeMinRank;
