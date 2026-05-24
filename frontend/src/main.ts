@@ -2534,7 +2534,9 @@ const renderPoiPin = (poi: Poi, x: number, y: number, s: number): string => {
   return (
     `  <g class="poi poi-pin" data-id="${poi.id}" style="cursor:move">\n` +
     `    <path d="M ${x.toFixed(2)},${y.toFixed(2)} L ${(x - m * 0.42).toFixed(2)},${(y - m * 0.95).toFixed(2)} A ${(m * 0.52).toFixed(2)},${(m * 0.52).toFixed(2)} 0 1 1 ${(x + m * 0.42).toFixed(2)},${(y - m * 0.95).toFixed(2)} Z" fill="${poi.color}" stroke="#111" stroke-width="${(m * 0.04).toFixed(3)}"/>\n` +
-    `    <circle cx="${x.toFixed(2)}" cy="${(y - m * 1.05).toFixed(2)}" r="${(m * 0.16).toFixed(2)}" fill="#ffffff"/>\n` +
+    // Centre the dot on the bulb: the arc endpoints sit at y - 0.95m and the
+    // radius is 0.52m, so the circle centre is y - (0.95 + √(0.52²-0.42²))m.
+    `    <circle cx="${x.toFixed(2)}" cy="${(y - m * 1.257).toFixed(2)}" r="${(m * 0.16).toFixed(2)}" fill="#ffffff"/>\n` +
     renderPoiLabel(poi, bounds, fontSize, 600) +
     `  </g>\n`
   );
