@@ -132,6 +132,85 @@ fn escape_xml(s: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+/// Coarse writing-system bucket — enough to tell a Latin name from a Cyrillic /
+/// Greek / CJK one.
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum Script {
+    Latin,
+    Cyrillic,
+    Greek,
+    Cjk,
+    Other,
+}
+
+fn char_script(c: char) -> Option<Script> {
+    if !c.is_alphabetic() {
+        return None;
+    }
+    Some(match c as u32 {
+        0x0041..=0x024F | 0x1E00..=0x1EFF => Script::Latin,
+        0x0370..=0x03FF | 0x1F00..=0x1FFF => Script::Greek,
+        0x0400..=0x052F => Script::Cyrillic,
+        0x3040..=0x30FF | 0x3400..=0x9FFF | 0xAC00..=0xD7AF => Script::Cjk,
+        _ => Script::Other,
+    })
+}
+
+/// Dominant writing system among a string's letters, if it has any.
+fn dominant_script(s: &str) -> Option<Script> {
+    use Script::{Cjk, Cyrillic, Greek, Latin, Other};
+    let mut counts = [
+        (Latin, 0usize),
+        (Cyrillic, 0),
+        (Greek, 0),
+        (Cjk, 0),
+        (Other, 0),
+    ];
+    for sc in s.chars().filter_map(char_script) {
+        for c in counts.iter_mut() {
+            if c.0 == sc {
+                c.1 += 1;
+            }
+        }
+    }
+    counts
+        .into_iter()
+        .filter(|c| c.1 > 0)
+        .max_by_key(|c| c.1)
+        .map(|c| c.0)
+}
+
+/// Strip foreign-script alternative-language parts from an OSM `name`. Border
+/// features often carry a bilingual `name` like
+/// "Zalew Wiślany - Калининградский залив"; keep only the leading run of parts
+/// in the name's primary script, dropping a segment once it switches to another
+/// script (Cyrillic / Greek / CJK …). A same-script hyphenated name such as
+/// "Jelenia Góra - Cieplice" is left untouched.
+fn primary_name(name: &str) -> String {
+    let name = name.trim();
+    for sep in [" - ", " — ", " – ", " / ", " | "] {
+        if !name.contains(sep) {
+            continue;
+        }
+        let parts: Vec<&str> = name.split(sep).collect();
+        let Some(primary) = parts.iter().find_map(|p| dominant_script(p)) else {
+            continue;
+        };
+        let kept: Vec<&str> = parts
+            .iter()
+            .copied()
+            .take_while(|p| match dominant_script(p) {
+                Some(s) => s == primary,
+                None => true, // punctuation / digits — keep with the run
+            })
+            .collect();
+        if kept.len() < parts.len() {
+            return kept.join(sep);
+        }
+    }
+    name.to_string()
+}
+
 /// Stitch a set of way node-id sequences into closed rings. A ring is
 /// closed when its first and last node ids match. Ways are joined when
 /// an endpoint of one matches an endpoint of another (reversing the
@@ -596,7 +675,7 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
             Element::Node { id, lat, lon, tags } => {
                 nodes.insert(*id, (*lon, *lat));
                 if let (Some(kind), Some(name)) = (tags.get("place"), tags.get("name")) {
-                    place_nodes.push((*lon, *lat, kind.clone(), name.clone()));
+                    place_nodes.push((*lon, *lat, kind.clone(), primary_name(name)));
                 }
             }
             Element::Way {
@@ -738,6 +817,7 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
             if info.layer == "road"
                 && let Some(name) = tags.get("name")
             {
+                let name = primary_name(name);
                 let road_kind = info
                     .subclass
                     .strip_prefix("road-")
@@ -1032,6 +1112,7 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
                     let Some(name) = tags.get("name") else {
                         continue;
                     };
+                    let name = primary_name(name);
                     let water_tag = tags.get("water").map(String::as_str);
                     let natural = tags.get("natural").map(String::as_str);
                     let waterway = tags.get("waterway").is_some();
@@ -1073,6 +1154,7 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
                     let Some(name) = tags.get("name") else {
                         continue;
                     };
+                    let name = primary_name(name);
                     let water_tag = tags.get("water").map(String::as_str);
                     let kind: &'static str = if natural == Some("water") {
                         match water_tag {
@@ -1119,6 +1201,7 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
                     let Some(name) = tags.get("name") else {
                         continue;
                     };
+                    let name = primary_name(name);
                     let is_sea = matches!(
                         tags.get("place").map(String::as_str),
                         Some("sea") | Some("ocean") | Some("strait")
@@ -1259,5 +1342,30 @@ mod sea_tests {
         assert!(!s.contains('"'), "raw quote left in: {s}");
         assert_eq!(s, "Zatoczka &quot;Dzikiej Róży&quot;");
         assert_eq!(escape_xml("a & b < c > d"), "a &amp; b &lt; c &gt; d");
+    }
+
+    #[test]
+    fn primary_name_drops_foreign_script_alternatives() {
+        // Bilingual names: keep the Latin part, drop the Cyrillic alternative.
+        assert_eq!(
+            primary_name("Zalew Wiślany - Калининградский залив"),
+            "Zalew Wiślany"
+        );
+        assert_eq!(
+            primary_name("Zatoka Gdańska - Гданьская бухта"),
+            "Zatoka Gdańska"
+        );
+    }
+
+    #[test]
+    fn primary_name_keeps_same_script_names() {
+        // A hyphenated single-language name is not an alternative — leave it.
+        assert_eq!(
+            primary_name("Jelenia Góra - Cieplice"),
+            "Jelenia Góra - Cieplice"
+        );
+        assert_eq!(primary_name("Gdańsk / Danzig"), "Gdańsk / Danzig");
+        assert_eq!(primary_name("Kraków"), "Kraków");
+        assert_eq!(primary_name("Bielsko-Biała"), "Bielsko-Biała");
     }
 }
