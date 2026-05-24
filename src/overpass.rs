@@ -55,6 +55,19 @@ pub struct RelationMember {
 
 pub fn build_query(bbox: Bbox) -> String {
     let b = format!("{},{},{},{}", bbox.south, bbox.west, bbox.north, bbox.east);
+    // Seas / oceans / bays are named by point features placed at the body's
+    // centre, which for a small coastal view sits well outside the bbox. Pull
+    // those names from a wider area (grown by the view span, min ~0.25°) so the
+    // sea can still be labelled; the renderer clamps the anchor into the view.
+    let gw = (bbox.east - bbox.west).abs().max(0.25);
+    let gh = (bbox.north - bbox.south).abs().max(0.25);
+    let eb = format!(
+        "{},{},{},{}",
+        bbox.south - gh,
+        bbox.west - gw,
+        bbox.north + gh,
+        bbox.east + gw
+    );
     format!(
         "[out:json][timeout:60];\n\
          (\n\
@@ -71,6 +84,8 @@ pub fn build_query(bbox: Bbox) -> String {
            relation[\"type\"=\"multipolygon\"][\"leisure\"]({b});\n\
            relation[\"type\"=\"multipolygon\"][\"building\"]({b});\n\
            node[\"place\"]({b});\n\
+           node[\"place\"~\"^(sea|ocean|strait)$\"]({eb});\n\
+           node[\"natural\"~\"^(bay|strait)$\"]({eb});\n\
          );\n\
          out body;\n\
          >;\n\

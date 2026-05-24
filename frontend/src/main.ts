@@ -3653,8 +3653,23 @@ const renderWaterLabels = (
       x = override.x;
       y = override.y;
     } else {
+      let lat = f.lat;
+      let lng = f.lng;
+      const b = norm();
+      const outside = lat < b.south || lat > b.north || lng < b.west || lng > b.east;
+      if (outside) {
+        // Sea/ocean/bay names are anchored at the body's centre, often outside
+        // a small coastal view. Clamp the anchor to the nearest view edge (a
+        // touch inset) so the name still shows, on the open-sea side. Lakes and
+        // rivers are local features, so out-of-view ones are still dropped.
+        if (f.kind !== "sea") continue;
+        const insetLat = (b.north - b.south) * 0.04;
+        const insetLng = (b.east - b.west) * 0.04;
+        lat = Math.min(b.north - insetLat, Math.max(b.south + insetLat, lat));
+        lng = Math.min(b.east - insetLng, Math.max(b.west + insetLng, lng));
+      }
       const fake: Poi = {
-        id: "", lat: f.lat, lng: f.lng,
+        id: "", lat, lng,
         text: "", style: "pin",
         color: "", textColor: "", markerSize: 0,
         fontSizePx: 4, textBg: false, textBgColor: "", textPosition: "bottom",
