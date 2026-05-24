@@ -245,6 +245,280 @@ fn stitch_chains(way_ids: &[i64], ways: &HashMap<i64, Vec<i64>>) -> Vec<Vec<i64>
     chains
 }
 
+/// Stitch coastline ways **preserving direction** — never reversing a segment —
+/// so OSM's winding survives (the sea is on the right of a coastline way in
+/// geographic space). `stitch_chains` reverses freely to join, which loses it.
+fn stitch_coastline_directed(way_ids: &[i64], ways: &HashMap<i64, Vec<i64>>) -> Vec<Vec<i64>> {
+    let mut remaining: Vec<Vec<i64>> = way_ids
+        .iter()
+        .filter_map(|id| ways.get(id).cloned())
+        .filter(|w| w.len() >= 2)
+        .collect();
+    let mut chains: Vec<Vec<i64>> = Vec::new();
+    while let Some(mut current) = remaining.pop() {
+        loop {
+            if current.first() == current.last() && current.len() >= 3 {
+                break;
+            }
+            let last = *current.last().unwrap();
+            match remaining.iter().position(|w| *w.first().unwrap() == last) {
+                Some(i) => {
+                    let w = remaining.remove(i);
+                    current.extend(w.into_iter().skip(1));
+                }
+                None => break,
+            }
+        }
+        loop {
+            if current.first() == current.last() && current.len() >= 3 {
+                break;
+            }
+            let first = *current.first().unwrap();
+            match remaining.iter().position(|w| *w.last().unwrap() == first) {
+                Some(i) => {
+                    let mut w = remaining.remove(i);
+                    w.extend(current.iter().skip(1).copied());
+                    current = w;
+                }
+                None => break,
+            }
+        }
+        chains.push(current);
+    }
+    chains
+}
+
+/// Position of a point on the viewport rectangle's perimeter as a parameter in
+/// [0,4): top edge 0–1, right 1–2, bottom 2–3, left 3–4 (clockwise on screen).
+fn boundary_param(p: (f64, f64), w: f64, h: f64) -> f64 {
+    let (x, y) = p;
+    // Snap to the nearest edge.
+    let d_top = y;
+    let d_bottom = h - y;
+    let d_left = x;
+    let d_right = w - x;
+    let m = d_top.min(d_bottom).min(d_left).min(d_right);
+    if m == d_top {
+        (x / w).clamp(0.0, 1.0)
+    } else if m == d_right {
+        1.0 + (y / h).clamp(0.0, 1.0)
+    } else if m == d_bottom {
+        2.0 + (1.0 - (x / w).clamp(0.0, 1.0))
+    } else {
+        3.0 + (1.0 - (y / h).clamp(0.0, 1.0))
+    }
+}
+
+/// Point on the perimeter at parameter t in [0,4).
+fn boundary_point(t: f64, w: f64, h: f64) -> (f64, f64) {
+    let t = t.rem_euclid(4.0);
+    if t < 1.0 {
+        (t * w, 0.0)
+    } else if t < 2.0 {
+        (w, (t - 1.0) * h)
+    } else if t < 3.0 {
+        ((3.0 - t) * w, h)
+    } else {
+        (0.0, (4.0 - t) * h)
+    }
+}
+
+/// The rect corners between params a and b walking in +t (their params:
+/// 1=TR, 2=BR, 3=BL, 4/0=TL).
+fn corners_between(a: f64, b: f64, w: f64, h: f64) -> Vec<(f64, f64)> {
+    let mut out = Vec::new();
+    let mut k = a.floor() + 1.0;
+    while k < b {
+        out.push(boundary_point(k, w, h));
+        k += 1.0;
+    }
+    out
+}
+
+/// Inside portion of a segment after clipping to the viewport rectangle.
+struct ClipSeg {
+    a: (f64, f64), // entry point (at t-entry along the original segment)
+    b: (f64, f64), // exit point (at t-exit)
+    t0: f64,
+    t1: f64,
+}
+
+/// Liang–Barsky: clip segment p→q to [0,w]×[0,h]. None if fully outside.
+fn liang_barsky(p: (f64, f64), q: (f64, f64), w: f64, h: f64) -> Option<ClipSeg> {
+    let (dx, dy) = (q.0 - p.0, q.1 - p.1);
+    let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
+    let edges = [(-dx, p.0), (dx, w - p.0), (-dy, p.1), (dy, h - p.1)];
+    for (pp, qq) in edges {
+        if pp.abs() < 1e-12 {
+            if qq < 0.0 {
+                return None; // parallel and outside
+            }
+        } else {
+            let r = qq / pp;
+            if pp < 0.0 {
+                if r > t1 {
+                    return None;
+                }
+                if r > t0 {
+                    t0 = r;
+                }
+            } else {
+                if r < t0 {
+                    return None;
+                }
+                if r < t1 {
+                    t1 = r;
+                }
+            }
+        }
+    }
+    if t0 > t1 {
+        return None;
+    }
+    Some(ClipSeg {
+        a: (p.0 + t0 * dx, p.1 + t0 * dy),
+        b: (p.0 + t1 * dx, p.1 + t1 * dy),
+        t0,
+        t1,
+    })
+}
+
+/// Clip a directed polyline to the rect, returning the maximal runs that lie
+/// inside, each beginning and ending **on the boundary**. Runs that begin or
+/// end at the chain's own interior endpoint (coastline data ending inside the
+/// view) are dropped — they can't be closed confidently.
+fn clip_runs(chain: &[(f64, f64)], w: f64, h: f64) -> Vec<Vec<(f64, f64)>> {
+    let eps = 1e-6;
+    let mut runs: Vec<Vec<(f64, f64)>> = Vec::new();
+    let mut cur: Vec<(f64, f64)> = Vec::new();
+    let mut start_on_boundary = false;
+    for seg in chain.windows(2) {
+        let Some(ClipSeg { a, b, t0, t1 }) = liang_barsky(seg[0], seg[1], w, h) else {
+            // Segment fully outside — close any open run at its last boundary pt.
+            if !cur.is_empty() {
+                if start_on_boundary {
+                    runs.push(std::mem::take(&mut cur));
+                } else {
+                    cur.clear();
+                }
+            }
+            continue;
+        };
+        let entered = t0 > eps; // a is a boundary crossing (seg[0] was outside)
+        let exited = t1 < 1.0 - eps; // b is a boundary crossing (seg[1] outside)
+        if cur.is_empty() {
+            cur.push(a);
+            start_on_boundary = entered;
+        } else {
+            let last = *cur.last().unwrap();
+            if (last.0 - a.0).abs() > eps || (last.1 - a.1).abs() > eps {
+                // Re-entered after a gap; close the previous run, begin anew.
+                if start_on_boundary {
+                    runs.push(std::mem::take(&mut cur));
+                } else {
+                    cur.clear();
+                }
+                cur.push(a);
+                start_on_boundary = entered;
+            }
+        }
+        cur.push(b);
+        if exited {
+            if start_on_boundary {
+                runs.push(std::mem::take(&mut cur));
+            } else {
+                cur.clear();
+            }
+            start_on_boundary = false;
+        }
+    }
+    runs
+}
+
+/// Build an SVG path `d` filling the **sea** within a w×h viewport from
+/// direction-preserving coastline `chains` (canvas coords). Returns "" when it
+/// can't assemble a confident, well-formed result, so nothing is filled rather
+/// than risking filling land. The map clip trims the path to the viewport.
+fn sea_fill_path(chains: &[Vec<(f64, f64)>], w: f64, h: f64) -> String {
+    // Sea is on the LEFT of coastline travel in canvas coords (geographic
+    // water-on-right flips under the Y-down projection). The +t perimeter walk
+    // below encloses the RIGHT of travel, so reverse each chain first to flip
+    // the enclosed side onto the sea. (Pinned by sea_tests::sea_fills_left.)
+    let mut runs: Vec<Vec<(f64, f64)>> = Vec::new();
+    for c in chains {
+        let rev: Vec<(f64, f64)> = c.iter().rev().copied().collect();
+        runs.extend(clip_runs(&rev, w, h));
+    }
+    if runs.is_empty() {
+        return String::new();
+    }
+    // Pair each run's exit to the next run's entry by walking the perimeter in
+    // +t; the corners in between become part of the sea polygon edge.
+    let n = runs.len();
+    let entry_t: Vec<f64> = runs.iter().map(|r| boundary_param(r[0], w, h)).collect();
+    let exit_t: Vec<f64> = runs
+        .iter()
+        .map(|r| boundary_param(*r.last().unwrap(), w, h))
+        .collect();
+    let mut used = vec![false; n];
+    let mut d = String::new();
+    for start in 0..n {
+        if used[start] {
+            continue;
+        }
+        let mut loop_pts: Vec<(f64, f64)> = Vec::new();
+        let mut cur = start;
+        let mut guard = 0;
+        loop {
+            used[cur] = true;
+            loop_pts.extend_from_slice(&runs[cur]);
+            // From this run's exit, find the next run whose entry is the first
+            // encountered walking +t around the perimeter.
+            let from = exit_t[cur];
+            let mut next = usize::MAX;
+            let mut best = f64::INFINITY;
+            for (j, &et) in entry_t.iter().enumerate() {
+                let mut delta = et - from;
+                if delta <= 1e-9 {
+                    delta += 4.0;
+                }
+                if delta < best {
+                    best = delta;
+                    next = j;
+                }
+            }
+            if next == usize::MAX {
+                break;
+            }
+            for c in corners_between(from, from + best, w, h) {
+                loop_pts.push(c);
+            }
+            if next == start {
+                break;
+            }
+            if used[next] {
+                break;
+            }
+            cur = next;
+            guard += 1;
+            if guard > n + 2 {
+                return String::new(); // assembly went wrong — bail, fill nothing
+            }
+        }
+        if loop_pts.len() >= 3 {
+            for (i, (x, y)) in loop_pts.iter().enumerate() {
+                if i == 0 {
+                    let _ = write!(d, "M{x:.2},{y:.2}");
+                } else {
+                    let _ = write!(d, " L{x:.2},{y:.2}");
+                }
+            }
+            d.push_str(" Z ");
+        }
+    }
+    d
+}
+
 const PLACE_SIZE_FRACTION: &[(&str, f64)] = &[
     ("city", 0.040),
     ("town", 0.022),
@@ -543,6 +817,25 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
         h = height,
     )
     .unwrap();
+
+    // Fill the sea. OSM has no polygon for the open sea — it's the water side of
+    // the coastline — so derive it from the (direction-preserving) coastline
+    // winding and fill just above the background, beneath the land layers. The
+    // builder bails (empty) on anything it can't close confidently, so we never
+    // risk painting land as water. Takes the theme's `.water` fill; the visible
+    // coastline stroke is drawn later by the coastline layer.
+    if !coastline_way_ids.is_empty() && !hidden.contains("water") {
+        let directed = stitch_coastline_directed(&coastline_way_ids, &way_nodes);
+        let chains: Vec<Vec<(f64, f64)>> = directed.iter().map(|c| project_ring(c)).collect();
+        let d = sea_fill_path(&chains, width, height);
+        if !d.is_empty() {
+            writeln!(
+                out,
+                r#"<path class="sea-fill water" fill-rule="evenodd" style="stroke:none" d="{d}"/>"#
+            )
+            .unwrap();
+        }
+    }
 
     for layer in layer_order {
         if hidden.contains(*layer) {
@@ -866,4 +1159,50 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
     }
     out.push_str("</svg>\n");
     out
+}
+
+#[cfg(test)]
+mod sea_tests {
+    use super::*;
+
+    fn centroid_x(d: &str) -> f64 {
+        let xs: Vec<f64> = d
+            .split(|c: char| c == 'M' || c == 'L' || c == 'Z' || c == ' ')
+            .filter(|s| s.contains(','))
+            .map(|s| s.split(',').next().unwrap().parse::<f64>().unwrap())
+            .collect();
+        xs.iter().sum::<f64>() / xs.len() as f64
+    }
+
+    // A coastline crossing the 100×100 viewport top→bottom at x=40, travelling
+    // downward (+y in canvas). Sea is on the LEFT of travel, which for downward
+    // screen travel is the +x (east) half — the fill must land there.
+    #[test]
+    fn sea_fills_left_of_travel() {
+        let chains = vec![vec![(40.0, -10.0), (40.0, 110.0)]];
+        let d = sea_fill_path(&chains, 100.0, 100.0);
+        assert!(!d.is_empty(), "expected a sea polygon");
+        let cx = centroid_x(&d);
+        assert!(cx > 50.0, "sea should fill the +x half; centroid x = {cx}");
+    }
+
+    // Reversed coastline (travelling up) flips the sea to the −x (west) half.
+    #[test]
+    fn sea_flips_with_direction() {
+        let chains = vec![vec![(40.0, 110.0), (40.0, -10.0)]];
+        let d = sea_fill_path(&chains, 100.0, 100.0);
+        assert!(!d.is_empty());
+        assert!(
+            centroid_x(&d) < 50.0,
+            "reversed coast should fill the −x half"
+        );
+    }
+
+    // No coastline crossing the view → nothing to fill (no false sea).
+    #[test]
+    fn no_coastline_no_fill() {
+        assert!(sea_fill_path(&[], 100.0, 100.0).is_empty());
+        let outside = vec![vec![(-50.0, -50.0), (-40.0, -60.0)]];
+        assert!(sea_fill_path(&outside, 100.0, 100.0).is_empty());
+    }
 }
