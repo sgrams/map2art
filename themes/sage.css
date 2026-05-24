@@ -1,0 +1,99 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Stan Grams <sjg@haxx.space>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/* sage — botanical herbarium: muted olive greens on warm off-white. */
+
+.background { fill: #f2f0e4; }
+
+.layer-landuse :where(polygon, path) { fill: #e7e7d3; stroke: none; }
+.landuse-forest      { fill: #bccca0; }
+.landuse-grass       { fill: #d3dcb4; }
+.landuse-residential { fill: #ecead8; }
+.landuse-industrial  { fill: #dcdac4; }
+.landuse-commercial  { fill: #e3e1cc; }
+
+.layer-leisure :where(polygon, path) { fill: #c8d6a8; stroke: none; }
+.leisure-park    { fill: #b4c890; }
+.leisure-garden  { fill: #cad9aa; }
+.leisure-pitch   { fill: #a6bb84; }
+
+.layer-water :where(polygon, path), .water { fill: #cdd9d2; stroke: #93a89a; stroke-width: 1.2; }
+.layer-waterway polyline, .layer-waterway path { fill: none; stroke: #93a89a; stroke-width: 2.4; }
+.coastline { fill: none; stroke: #7a8f80; stroke-width: 3; }
+
+.layer-building :where(polygon, path) { fill: #ded9c4; stroke: #a8a187; stroke-width: 0.4; }
+
+.layer-rail polyline, .layer-rail path {
+  fill: none; stroke: #8a9070; stroke-width: 1.6;
+  stroke-dasharray: 5 5;
+}
+
+.layer-road-casings polyline, .layer-road-casings path {
+  fill: none;
+  stroke: #f2f0e4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.road-motorway-casing    { stroke-width: 9.5; }
+.road-trunk-casing       { stroke-width: 8.5; }
+.road-primary-casing     { stroke-width: 7.5; }
+.road-secondary-casing   { stroke-width: 6.5; }
+.road-tertiary-casing    { stroke-width: 5.5; }
+.road-residential-casing { stroke-width: 4.0; }
+.road-service-casing     { stroke-width: 2.4; }
+.road-path-casing        { stroke: none; }
+.road-other-casing       { stroke-width: 2.6; }
+
+.layer-road polyline, .layer-road path {
+  fill: none;
+  stroke: #76804e;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.road-path        { stroke: #9aa074; stroke-width: 1.2; stroke-dasharray: 3 3; }
+.road-service     { stroke: #87905f; stroke-width: 1.4; }
+.road-residential { stroke: #76804e; stroke-width: 2.4; }
+.road-tertiary    { stroke: #6b7644; stroke-width: 3.5; }
+.road-secondary   { stroke: #606b3a; stroke-width: 4.5; }
+.road-primary     { stroke: #556032; stroke-width: 5.5; }
+.road-trunk       { stroke: #4b552a; stroke-width: 6.5; }
+.road-motorway    { stroke: #414b22; stroke-width: 7.5; }
+.road-other       { stroke: #8a9068; stroke-width: 1.6; }
+
+.layer-road-labels text {
+  font-family: "Palatino Linotype", Palatino, Georgia, serif;
+  fill: #41502a;
+  paint-order: stroke;
+  stroke: #f2f0e4;
+  stroke-width: 2.4;
+  letter-spacing: 0.05em;
+  font-style: italic;
+}
+
+.layer-places text {
+  font-family: "Palatino Linotype", Palatino, Georgia, serif;
+  fill: #2e3a1c;
+  paint-order: stroke;
+  stroke: #f2f0e4;
+  stroke-width: 2.6;
+}
+.place-city { font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; }
+.place-town { font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; }
+.place-village { font-weight: 500; font-style: italic; }
+.place-suburb { font-style: italic; fill: #41502a; }
+
+.layer-water-labels text {
+  font-family: "Palatino Linotype", Palatino, Georgia, serif;
+  fill: #4a6358;
+  paint-order: stroke;
+  stroke: #f2f0e4;
+  stroke-width: 2.2;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+.water-label.water-waterway { font-size: 0.8em; }
+.water-label.water-water    { font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }

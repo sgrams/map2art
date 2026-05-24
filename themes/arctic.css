@@ -1,0 +1,98 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Stan Grams <sjg@haxx.space>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/* arctic — ice: pale blues and white, cool and minimal. */
+
+.background { fill: #eef4f8; }
+
+.layer-landuse :where(polygon, path) { fill: #e4edf2; stroke: none; }
+.landuse-forest      { fill: #cfe0dd; }
+.landuse-grass       { fill: #dcebef; }
+.landuse-residential { fill: #e8f0f4; }
+.landuse-industrial  { fill: #dde7ec; }
+.landuse-commercial  { fill: #e3ecf1; }
+
+.layer-leisure :where(polygon, path) { fill: #d4e6e6; stroke: none; }
+.leisure-park    { fill: #c2dcde; }
+.leisure-garden  { fill: #d6e8e8; }
+.leisure-pitch   { fill: #b4d2d4; }
+
+.layer-water :where(polygon, path), .water { fill: #cfe4f0; stroke: #9cc2dc; stroke-width: 1.2; }
+.layer-waterway polyline, .layer-waterway path { fill: none; stroke: #9cc2dc; stroke-width: 2.4; }
+.coastline { fill: none; stroke: #7aa6c8; stroke-width: 3; }
+
+.layer-building :where(polygon, path) { fill: #dbe5ec; stroke: #a9bccb; stroke-width: 0.4; }
+
+.layer-rail polyline, .layer-rail path {
+  fill: none; stroke: #8aa0b4; stroke-width: 1.6;
+  stroke-dasharray: 5 5;
+}
+
+.layer-road-casings polyline, .layer-road-casings path {
+  fill: none;
+  stroke: #ffffff;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.road-motorway-casing    { stroke-width: 9.5; }
+.road-trunk-casing       { stroke-width: 8.5; }
+.road-primary-casing     { stroke-width: 7.5; }
+.road-secondary-casing   { stroke-width: 6.5; }
+.road-tertiary-casing    { stroke-width: 5.5; }
+.road-residential-casing { stroke-width: 4.0; }
+.road-service-casing     { stroke-width: 2.4; }
+.road-path-casing        { stroke: none; }
+.road-other-casing       { stroke-width: 2.6; }
+
+.layer-road polyline, .layer-road path {
+  fill: none;
+  stroke: #6e8ca6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.road-path        { stroke: #9cb2c4; stroke-width: 1.2; stroke-dasharray: 3 3; }
+.road-service     { stroke: #82a0b8; stroke-width: 1.4; }
+.road-residential { stroke: #6e8ca6; stroke-width: 2.4; }
+.road-tertiary    { stroke: #62809c; stroke-width: 3.5; }
+.road-secondary   { stroke: #587592; stroke-width: 4.5; }
+.road-primary     { stroke: #4e6a88; stroke-width: 5.5; }
+.road-trunk       { stroke: #45607e; stroke-width: 6.5; }
+.road-motorway    { stroke: #3c5674; stroke-width: 7.5; }
+.road-other       { stroke: #88a4ba; stroke-width: 1.6; }
+
+.layer-road-labels text {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  fill: #3c5674;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 2.4;
+  letter-spacing: 0.06em;
+}
+
+.layer-places text {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  fill: #283f56;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 2.6;
+}
+.place-city { font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; }
+.place-town { font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+.place-village { font-weight: 500; letter-spacing: 0.06em; }
+.place-suburb { font-style: italic; fill: #3c5674; }
+
+.layer-water-labels text {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  fill: #4a7290;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 2.2;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+.water-label.water-waterway { font-size: 0.8em; }
+.water-label.water-water    { font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }

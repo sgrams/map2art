@@ -1,0 +1,84 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Stan Grams <sjg@haxx.space>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/* solarized — Ethan Schoonover's Solarized Dark palette. */
+
+.background { fill: #002b36; }
+
+.layer-landuse :where(polygon, path) { fill: #073642; stroke: none; }
+.landuse-forest      { fill: #0a3f3a; }
+.landuse-grass       { fill: #0d3f30; }
+.landuse-residential { fill: #073642; }
+.landuse-industrial  { fill: #083845; }
+.landuse-commercial  { fill: #083845; }
+
+.layer-leisure :where(polygon, path) { fill: #0a3f3a; stroke: none; }
+.leisure-park    { fill: #0d4438; }
+.leisure-garden  { fill: #0a3f3a; }
+.leisure-pitch   { fill: #0f4a3c; }
+
+.layer-water :where(polygon, path), .water { fill: #053a47; stroke: #2aa198; stroke-width: 0.8; }
+.layer-waterway polyline, .layer-waterway path { fill: none; stroke: #2aa198; stroke-width: 2; }
+.coastline { fill: none; stroke: #268bd2; stroke-width: 3.5; }
+
+.layer-building :where(polygon, path) { fill: #0a3a46; stroke: #586e75; stroke-width: 0.4; }
+
+.layer-rail polyline, .layer-rail path {
+  fill: none; stroke: #586e75; stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+}
+
+.layer-road-casings polyline, .layer-road-casings path { stroke: none; }
+
+.layer-road polyline, .layer-road path {
+  fill: none;
+  stroke: #657b83;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.road-path        { stroke: #586e75; stroke-width: 0.9; stroke-dasharray: 2 2; opacity: 0.6; }
+.road-service     { stroke: #657b83; stroke-width: 1.3; }
+.road-residential { stroke: #839496; stroke-width: 2.2; }
+.road-tertiary    { stroke: #268bd2; stroke-width: 3.2; }
+.road-secondary   { stroke: #2aa198; stroke-width: 4.2; }
+.road-primary     { stroke: #dc322f; stroke-width: 5.2; }
+.road-trunk       { stroke: #cb4b16; stroke-width: 6.2; }
+.road-motorway    { stroke: #b58900; stroke-width: 7.2; }
+.road-other       { stroke: #859900; stroke-width: 1.4; }
+
+.layer-road-labels text {
+  font-family: ui-monospace, "Courier New", monospace;
+  fill: #93a1a1;
+  paint-order: stroke;
+  stroke: #002b36;
+  stroke-width: 2.4;
+  letter-spacing: 0.08em;
+}
+
+.layer-places text {
+  font-family: ui-monospace, "Courier New", monospace;
+  fill: #eee8d5;
+  paint-order: stroke;
+  stroke: #002b36;
+  stroke-width: 2.8;
+}
+.place-city { font-weight: 700; letter-spacing: 0.24em; text-transform: uppercase; fill: #b58900; }
+.place-town { font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; }
+.place-village { font-weight: 500; }
+.place-suburb { font-style: italic; opacity: 0.75; }
+
+.layer-water-labels text {
+  font-family: ui-monospace, "Courier New", monospace;
+  fill: #2aa198;
+  paint-order: stroke;
+  stroke: #002b36;
+  stroke-width: 2.4;
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+.water-label.water-waterway { font-size: 0.8em; }
+.water-label.water-water    { letter-spacing: 0.14em; text-transform: uppercase; }
