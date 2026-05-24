@@ -149,8 +149,7 @@ const map = new maplibregl.Map({
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "top-right");
 map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-right");
 
-// Right-click is reserved for dropping a POI (bound below). Rotation moves to
-// middle-click + drag.
+// Rotation moves to middle-click + drag (right-click no longer adds a POI).
 map.dragRotate.disable();
 
 let bearingDrag:
@@ -1723,12 +1722,60 @@ const addPoi = (atLat?: number, atLng?: number) => {
   recompose();
 };
 
+// Undo shortcut hint, platform-aware (matches the Ctrl/⌘+Z binding below).
+const UNDO_HINT = /mac/i.test(navigator.userAgent) ? "⌘Z to undo" : "Ctrl+Z to undo";
+
+/** Remove a POI by id, drop it from every route, and re-render. Shared by the
+ *  row delete button and the right-click-to-remove gesture (map + preview). */
+const removePoi = (id: string) => {
+  const i = pois.findIndex((p) => p.id === id);
+  if (i < 0) return;
+  snapshot();
+  pois.splice(i, 1);
+  // Drop the deleted POI from every route and resync segment controls so
+  // controlPoints[i] keeps pointing at the same segment afterwards.
+  for (const r of routes) {
+    if (r.poiIds.includes(id)) {
+      r.poiIds = r.poiIds.filter((pid) => pid !== id);
+      syncRouteControlPoints(r);
+    }
+  }
+  renderPoiList();
+  renderRouteList();
+  recompose();
+  setStatus(`POI removed — ${UNDO_HINT}`, "ok");
+};
+
+/** Move a POI up (dir = -1) or down (dir = +1) in the list. POI numbering is
+ *  derived from list order, so reordering also renumbers the POI everywhere
+ *  routes reference it. */
+const movePoi = (id: string, dir: -1 | 1) => {
+  const i = pois.findIndex((p) => p.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= pois.length) return;
+  snapshot();
+  [pois[i], pois[j]] = [pois[j], pois[i]];
+  renderPoiList();
+  renderRouteList();
+  recompose();
+};
+
 const renderPoiList = () => {
   poiListEl.innerHTML = "";
-  for (const p of pois) {
+  pois.forEach((p, index) => {
     const li = document.createElement("li");
     li.className = "poi-row";
     li.dataset.id = p.id;
+
+    // Header row: number badge + label + reorder buttons. The number is the
+    // POI's 1-based position and is what routes reference (e.g. "1, 2, 3").
+    const head = document.createElement("div");
+    head.className = "poi-head";
+
+    const num = document.createElement("span");
+    num.className = "poi-num";
+    num.textContent = String(index + 1);
+    num.title = "POI number — reference it in routes by this value";
 
     const text = document.createElement("input");
     text.type = "text";
@@ -1738,6 +1785,24 @@ const renderPoiList = () => {
       p.text = text.value;
       recompose();
     });
+
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "poi-move";
+    up.textContent = "↑";
+    up.title = "Move up";
+    up.disabled = index === 0;
+    up.addEventListener("click", () => movePoi(p.id, -1));
+
+    const down = document.createElement("button");
+    down.type = "button";
+    down.className = "poi-move";
+    down.textContent = "↓";
+    down.title = "Move down";
+    down.disabled = index === pois.length - 1;
+    down.addEventListener("click", () => movePoi(p.id, 1));
+
+    head.append(num, text, up, down);
 
     const controls = document.createElement("div");
     controls.className = "poi-controls";
@@ -1807,22 +1872,7 @@ const renderPoiList = () => {
     del.className = "delete-btn";
     del.textContent = "✕";
     del.title = "Delete POI";
-    del.addEventListener("click", () => {
-      snapshot();
-      const i = pois.findIndex((x) => x.id === p.id);
-      if (i >= 0) pois.splice(i, 1);
-      // Drop the deleted POI from every route and resync segment controls so
-      // controlPoints[i] keeps pointing at the same segment afterwards.
-      for (const r of routes) {
-        if (r.poiIds.includes(p.id)) {
-          r.poiIds = r.poiIds.filter((id) => id !== p.id);
-          syncRouteControlPoints(r);
-        }
-      }
-      renderPoiList();
-      renderRouteList();
-      recompose();
-    });
+    del.addEventListener("click", () => removePoi(p.id));
 
     controls.append(lat, lng, style, color, textColor, size, del);
 
@@ -1881,9 +1931,9 @@ const renderPoiList = () => {
     });
 
     extras.append(fontSizeLbl, posLbl, bgCheckRow, bgColor);
-    li.append(text, controls, extras);
+    li.append(head, controls, extras);
     poiListEl.appendChild(li);
-  }
+  });
   poiEmptyEl.hidden = pois.length > 0;
   refreshPoiMapMarkers();
 };
@@ -2252,12 +2302,36 @@ const refreshPoiMapMarkers = () => {
       el.className = "map-poi-marker";
       const dot = document.createElement("div");
       dot.className = "map-poi-dot";
+      dot.title = "Drag to move · right-click to remove";
       const label = document.createElement("div");
       label.className = "map-poi-label";
       el.append(dot, label);
-      m = new maplibregl.Marker({ element: el, anchor: "center" })
+      // Right-click the marker to remove this POI. The dot is the only
+      // interactive part (see CSS), so left-clicks elsewhere still drop POIs
+      // and the map stays pannable; the same hit area lets the marker be
+      // dragged to reposition the POI.
+      const pid = p.id;
+      el.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        removePoi(pid);
+      });
+      m = new maplibregl.Marker({ element: el, anchor: "center", draggable: true })
         .setLngLat([p.lng, p.lat])
         .addTo(map);
+      // Drag the marker to move the POI; snapshot on start so it's undoable,
+      // commit the new lat/lng on release.
+      m.on("dragstart", () => snapshot());
+      m.on("dragend", () => {
+        const poi = pois.find((x) => x.id === pid);
+        if (!poi) return;
+        const ll = poiMapMarkers.get(pid)?.getLngLat();
+        if (!ll) return;
+        poi.lat = ll.lat;
+        poi.lng = ll.lng;
+        renderPoiList();
+        recompose();
+      });
       poiMapMarkers.set(p.id, m);
     }
     m.setLngLat([p.lng, p.lat]);
@@ -2269,8 +2343,8 @@ const refreshPoiMapMarkers = () => {
   }
 };
 
-// Left-click or right-click on the map drops a POI at the clicked location.
-// MapLibre's click event suppresses itself after a drag, so panning still works.
+// Left-click on the map drops a POI at the clicked location. MapLibre's click
+// event suppresses itself after a drag, so panning still works.
 const dropPoiAt = (e: maplibregl.MapMouseEvent) => {
   addPoi(e.lngLat.lat, e.lngLat.lng);
   setStatus(
@@ -2279,9 +2353,10 @@ const dropPoiAt = (e: maplibregl.MapMouseEvent) => {
   );
 };
 map.on("click", dropPoiAt);
+// Right-click no longer drops a POI (left-click is enough); just suppress the
+// browser context menu. To remove a POI, right-click it in the preview editor.
 map.on("contextmenu", (e) => {
   e.originalEvent.preventDefault();
-  dropPoiAt(e);
 });
 
 // -- POI marker SVG generators ----------------------------------------------
@@ -3812,6 +3887,7 @@ const bindPoiDragHandlers = () => {
     let startLng = 0;
 
     g.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return; // left-drag only; right-click removes (below)
       e.stopPropagation();
       e.preventDefault();
       snapshot();
@@ -3871,6 +3947,13 @@ const bindPoiDragHandlers = () => {
     };
     g.addEventListener("pointerup", end);
     g.addEventListener("pointercancel", end);
+
+    // Right-click a POI in the editor to remove it.
+    g.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      removePoi(id);
+    });
   });
 };
 
