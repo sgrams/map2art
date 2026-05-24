@@ -55,12 +55,13 @@ pub struct RelationMember {
 
 pub fn build_query(bbox: Bbox) -> String {
     let b = format!("{},{},{},{}", bbox.south, bbox.west, bbox.north, bbox.east);
-    // Seas / oceans / bays are named by point features placed at the body's
-    // centre, which for a small coastal view sits well outside the bbox. Pull
-    // those names from a wider area (grown by the view span, min ~0.25°) so the
-    // sea can still be labelled; the renderer clamps the anchor into the view.
-    let gw = (bbox.east - bbox.west).abs().max(0.25);
-    let gh = (bbox.north - bbox.south).abs().max(0.25);
+    // Seas / oceans / bays / gulfs are named by features placed at the body's
+    // centre — often a node, sometimes an area (natural=bay way/relation) — well
+    // outside a small coastal view. Pull those names from a wider area (grown by
+    // the view span, min ~1°) so the body can still be labelled; the renderer
+    // clamps the anchor into the view.
+    let gw = (bbox.east - bbox.west).abs().max(1.0);
+    let gh = (bbox.north - bbox.south).abs().max(1.0);
     let eb = format!(
         "{},{},{},{}",
         bbox.south - gh,
@@ -86,6 +87,8 @@ pub fn build_query(bbox: Bbox) -> String {
            node[\"place\"]({b});\n\
            node[\"place\"~\"^(sea|ocean|strait)$\"]({eb});\n\
            node[\"natural\"~\"^(bay|strait)$\"]({eb});\n\
+           way[\"natural\"~\"^(bay|strait)$\"]({eb});\n\
+           relation[\"natural\"~\"^(bay|strait)$\"]({eb});\n\
          );\n\
          out body;\n\
          >;\n\

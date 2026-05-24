@@ -1030,6 +1030,8 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
                             Some("sea") | Some("ocean") | Some("bay") | Some("strait") => "sea",
                             _ => "lake",
                         }
+                    } else if matches!(natural, Some("bay") | Some("strait")) {
+                        "sea"
                     } else {
                         continue;
                     };
@@ -1047,20 +1049,21 @@ pub fn render_svg(data: &OverpassResponse, bbox: Bbox, opts: RenderOptions<'_>) 
                         .extend(pts);
                 }
                 Element::Relation { members, tags } => {
-                    if tags.get("type").map(String::as_str) != Some("multipolygon") {
-                        continue;
-                    }
                     let natural = tags.get("natural").map(String::as_str);
-                    if natural != Some("water") {
+                    if !matches!(natural, Some("water") | Some("bay") | Some("strait")) {
                         continue;
                     }
                     let Some(name) = tags.get("name") else {
                         continue;
                     };
                     let water_tag = tags.get("water").map(String::as_str);
-                    let kind: &'static str = match water_tag {
-                        Some("sea") | Some("ocean") | Some("bay") | Some("strait") => "sea",
-                        _ => "lake",
+                    let kind: &'static str = if natural == Some("water") {
+                        match water_tag {
+                            Some("sea") | Some("ocean") | Some("bay") | Some("strait") => "sea",
+                            _ => "lake",
+                        }
+                    } else {
+                        "sea" // natural=bay|strait
                     };
                     for m in members {
                         if m.member_type != "way" {
