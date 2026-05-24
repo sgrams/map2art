@@ -371,6 +371,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <label>Font <select id="label-font"></select></label>
             </div>
             <p class="overlays-hint">Applies one color and typeface to all map labels (streets, places, water), overriding the theme. Off = the theme's own label styling.</p>
+
+            <h3>Edit individual labels</h3>
+            <ul id="place-label-list" class="label-edit-list"></ul>
+            <p class="overlays-hint" id="place-label-empty">Render a map with labels on (Street / Place / Water names) to edit them here — font, size×, color, bold, italic. Drag any label on the canvas to move it (street names ride their road, so dragging nudges them off it); reset position with ⟲.</p>
             <p class="overlays-hint">Lat/Lng grid and the cross marker have moved to the <em>Coords</em> tab.</p>
             <p class="overlays-hint">Layer changes apply on the next render. Hide before rendering to save time on big bboxes.</p>
           </div>

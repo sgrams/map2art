@@ -38,6 +38,8 @@ const riverLabelsToggle = $<HTMLInputElement>("river-labels-toggle");
 const labelStyleToggle = $<HTMLInputElement>("label-style-toggle");
 const labelColorInput = $<HTMLInputElement>("label-color");
 const labelFontSelect = $<HTMLSelectElement>("label-font");
+const placeLabelListEl = $<HTMLUListElement>("place-label-list");
+const placeLabelEmptyEl = $<HTMLParagraphElement>("place-label-empty");
 const graticuleToggle = $<HTMLInputElement>("graticule-toggle");
 const graticuleColorInput = $<HTMLInputElement>("graticule-color");
 const graticuleHaloColorInput = $<HTMLInputElement>("graticule-halo-color");
@@ -3410,6 +3412,197 @@ attribCornerSelect.addEventListener("change", () => {
   recompose();
 });
 
+// -- Per-label editing (place / water / street names) ----------------------
+
+/** Per-label style + position override. `sizeMul` multiplies the backend
+ *  font-size; dx/dy are an offset in the map's own coordinate units. */
+type LabelOverride = {
+  font?: string;
+  sizeMul?: number;
+  color?: string;
+  bold?: boolean;
+  italic?: boolean;
+  dx?: number;
+  dy?: number;
+};
+type LabelType = "place" | "water" | "street";
+const placeLabelOverrides = new Map<string, LabelOverride>();
+const streetLabelOverrides = new Map<string, LabelOverride>();
+/** Water labels are client-rendered (see renderWaterLabels); position lives in
+ *  waterOverrides, so this holds style only. */
+const waterLabelStyleOverrides = new Map<string, LabelOverride>();
+/** Label names found in the last composed map — drive the editor list. */
+let placeLabelNames: string[] = [];
+let streetLabelNames: string[] = [];
+let waterLabelNames: string[] = [];
+
+const labelOverrideMap = (type: LabelType): Map<string, LabelOverride> =>
+  type === "place"
+    ? placeLabelOverrides
+    : type === "street"
+      ? streetLabelOverrides
+      : waterLabelStyleOverrides;
+
+/** Apply an override to a backend label <text> via inline style (the theme's
+ *  `.layer-*-labels text { … }` CSS beats presentation attributes, but inline
+ *  style beats the non-important stylesheet). Position uses a transform. */
+const applyLabelStyleToText = (t: SVGTextElement, ov: LabelOverride) => {
+  if (ov.font) t.style.fontFamily = ov.font;
+  if (ov.color) t.style.fill = ov.color;
+  if (ov.bold) t.style.fontWeight = "700";
+  if (ov.italic) t.style.fontStyle = "italic";
+  if (ov.sizeMul && ov.sizeMul !== 1) {
+    const base = parseFloat(t.getAttribute("font-size") ?? "0");
+    if (base > 0) t.setAttribute("font-size", (base * ov.sizeMul).toFixed(2));
+  }
+  if (ov.dx || ov.dy) {
+    t.setAttribute("transform", `translate(${(ov.dx ?? 0).toFixed(2)} ${(ov.dy ?? 0).toFixed(2)})`);
+  }
+};
+
+/** Tag + style the backend's place labels in the parsed map doc for editing. */
+const applyPlaceLabelOverrides = (doc: Document) => {
+  const names: string[] = [];
+  doc.querySelectorAll<SVGTextElement>("g.layer-places text.place").forEach((t) => {
+    const name = (t.textContent ?? "").trim();
+    if (!name) return;
+    names.push(name);
+    t.setAttribute("data-place-name", name);
+    t.style.cursor = "move";
+    const ov = placeLabelOverrides.get(name);
+    if (ov) applyLabelStyleToText(t, ov);
+  });
+  placeLabelNames = Array.from(new Set(names));
+};
+
+/** Tag + style the backend's street (road) labels. They ride a textPath along
+ *  the road, so dx/dy nudges the whole label off the centerline. */
+const applyStreetLabelOverrides = (doc: Document) => {
+  const names: string[] = [];
+  doc.querySelectorAll<SVGTextElement>("g.layer-road-labels text.road-label").forEach((t) => {
+    const name = (t.textContent ?? "").trim();
+    if (!name) return;
+    names.push(name);
+    t.setAttribute("data-street-name", name);
+    t.style.cursor = "move";
+    const ov = streetLabelOverrides.get(name);
+    if (ov) applyLabelStyleToText(t, ov);
+  });
+  streetLabelNames = Array.from(new Set(names));
+};
+
+/** Uniform scale of the map-content group, so a canvas-space drag delta can be
+ *  converted back to map-content units. */
+const mapContentScale = (svg: SVGSVGElement): number => {
+  const tr = svg.querySelector("g.map-content")?.getAttribute("transform") ?? "";
+  const m = tr.match(/scale\(([\d.]+)\)/);
+  return m ? parseFloat(m[1]) || 1 : 1;
+};
+
+const LABEL_TYPE_TAG: Record<LabelType, string> = {
+  place: "place",
+  water: "water",
+  street: "street",
+};
+
+/** One editable row for a label: type tag, name, font / size× / color / bold /
+ *  italic / reset-position. Position is set by dragging the label on canvas. */
+const makeLabelRow = (type: LabelType, name: string): HTMLLIElement => {
+  const map = labelOverrideMap(type);
+  const ov = map.get(name) ?? {};
+  const setOv = (patch: Partial<LabelOverride>) => {
+    map.set(name, { ...(map.get(name) ?? {}), ...patch });
+    recompose();
+  };
+
+  const li = document.createElement("li");
+  li.className = "label-edit-row";
+  const head = document.createElement("div");
+  head.className = "label-edit-head";
+  const tag = document.createElement("span");
+  tag.className = `label-edit-type label-edit-type-${type}`;
+  tag.textContent = LABEL_TYPE_TAG[type];
+  const title = document.createElement("span");
+  title.className = "label-edit-name";
+  title.textContent = name;
+  title.title = name;
+  head.append(tag, title);
+
+  const controls = document.createElement("div");
+  controls.className = "label-edit-controls";
+
+  const font = document.createElement("select");
+  font.title = "Font";
+  font.appendChild(new Option("theme font", ""));
+  for (const f of FONT_FAMILIES) font.appendChild(new Option(f.label, f.css));
+  font.value = ov.font ?? "";
+  font.addEventListener("change", () => setOv({ font: font.value || undefined }));
+
+  const size = document.createElement("input");
+  size.type = "number"; size.step = "0.1"; size.min = "0.2";
+  size.value = String(ov.sizeMul ?? 1);
+  size.title = "Size × (multiplier)";
+  size.addEventListener("input", () => {
+    const v = parseFloat(size.value);
+    setOv({ sizeMul: Number.isFinite(v) && v > 0 ? v : 1 });
+  });
+
+  const color = document.createElement("input");
+  color.type = "color"; color.value = ov.color ?? "#333333";
+  color.title = "Text color";
+  color.addEventListener("input", () => setOv({ color: color.value }));
+
+  const boldRow = document.createElement("label");
+  boldRow.className = "check-row";
+  const bold = document.createElement("input");
+  bold.type = "checkbox"; bold.checked = !!ov.bold;
+  bold.addEventListener("change", () => setOv({ bold: bold.checked }));
+  boldRow.append(bold, "B");
+
+  const italRow = document.createElement("label");
+  italRow.className = "check-row";
+  const ital = document.createElement("input");
+  ital.type = "checkbox"; ital.checked = !!ov.italic;
+  ital.addEventListener("change", () => setOv({ italic: ital.checked }));
+  italRow.append(ital, "I");
+
+  const resetPos = document.createElement("button");
+  resetPos.type = "button"; resetPos.className = "label-edit-reset";
+  resetPos.textContent = "⟲"; resetPos.title = "Reset position";
+  resetPos.addEventListener("click", () => {
+    if (type === "water") {
+      waterOverrides.delete(name);
+    } else {
+      const cur = map.get(name) ?? {};
+      delete cur.dx; delete cur.dy;
+      map.set(name, cur);
+    }
+    recompose();
+  });
+
+  controls.append(font, size, color, boldRow, italRow, resetPos);
+  li.append(head, controls);
+  return li;
+};
+
+/** Rebuild the unified label editor (place + water + street). */
+const renderLabelList = () => {
+  placeLabelListEl.innerHTML = "";
+  const groups: Array<[LabelType, string[]]> = [
+    ["place", placeLabelNames],
+    ["street", streetLabelNames],
+    ["water", waterLabelNames],
+  ];
+  let any = false;
+  for (const [type, names] of groups) {
+    for (const name of names) {
+      placeLabelListEl.appendChild(makeLabelRow(type, name));
+      any = true;
+    }
+  }
+  placeLabelEmptyEl.hidden = any;
+};
+
 // -- Water labels (client-side rendering + drag) ----------------------------
 
 type WaterKind = "sea" | "lake" | "river";
@@ -3440,6 +3633,7 @@ const extractWaterFeatures = (doc: Document): WaterFeature[] => {
 const renderWaterLabels = (
   mx: number, my: number, mw: number, mh: number, minDim: number,
 ): string => {
+  waterLabelNames = [];
   if (waterFeatures.length === 0) return "";
   const showSea = seaLabelsToggle.checked;
   const showLake = lakeLabelsToggle.checked;
@@ -3470,12 +3664,22 @@ const renderWaterLabels = (
       x = p.x;
       y = p.y;
     }
+    waterLabelNames.push(f.name);
+    // Per-label style via inline style (beats the theme's water-label CSS).
+    const sov = waterLabelStyleOverrides.get(f.name) ?? {};
+    let styleStr = "cursor:move";
+    if (sov.font) styleStr += `;font-family:${sov.font}`;
+    if (sov.color) styleStr += `;fill:${sov.color}`;
+    if (sov.bold) styleStr += ";font-weight:700";
+    if (sov.italic) styleStr += ";font-style:italic";
+    const fsFinal = fs * (sov.sizeMul && sov.sizeMul > 0 ? sov.sizeMul : 1);
     body +=
       `    <text class="water-label water-${f.kind}" data-name="${escapeXml(f.name)}" ` +
       `x="${x.toFixed(2)}" y="${y.toFixed(2)}" ` +
-      `font-size="${fs.toFixed(2)}" text-anchor="middle" ` +
-      `style="cursor:move">${escapeXml(f.name)}</text>\n`;
+      `font-size="${fsFinal.toFixed(2)}" text-anchor="middle" ` +
+      `style="${styleStr}">${escapeXml(f.name)}</text>\n`;
   }
+  waterLabelNames = Array.from(new Set(waterLabelNames));
   if (!body) return "";
   return `  <g class="layer-water-labels" data-source="client">\n${body}  </g>\n`;
 };
@@ -3595,6 +3799,9 @@ const composeSvg = (forExport = false): string | null => {
   // Pull water features out so the frontend can render labels client-side
   // (and let users drag them). The extractor also strips the hidden block.
   waterFeatures = extractWaterFeatures(doc);
+  // Apply per-label style/position overrides and tag labels for drag.
+  applyPlaceLabelOverrides(doc);
+  applyStreetLabelOverrides(doc);
   // Hoist the map's <style> blocks (theme CSS) up to the outer SVG so the
   // rules apply during <img>/createImageBitmap rasterization. Some browsers
   // don't reliably apply <style> nested inside an inner <svg> when the outer
@@ -3949,6 +4156,62 @@ const recompose = () => {
   bindScaleBarDrag();
   bindAttributionDrag();
   bindWaterLabelDrag();
+  bindLabelDrag("g.layer-places text[data-place-name]", placeLabelOverrides, (t) => t.dataset.placeName);
+  bindLabelDrag("g.layer-road-labels text[data-street-name]", streetLabelOverrides, (t) => t.dataset.streetName);
+  // Rebuild the per-label editor only when the set of place names changes
+  // (i.e. on a new render) — never on routine style/drag recomposes, so editing
+  // a row doesn't steal focus mid-input.
+  const namesKey = [placeLabelNames, streetLabelNames, waterLabelNames].map((a) => a.join("")).join("");
+  if (namesKey !== lastPlaceNamesKey) {
+    lastPlaceNamesKey = namesKey;
+    renderLabelList();
+  }
+};
+let lastPlaceNamesKey = "";
+
+/** Drag a backend label (place or street) on the canvas; stores the offset (in
+ *  map-content units) in its override map so it survives recompose and export. */
+const bindLabelDrag = (
+  selector: string,
+  map: Map<string, LabelOverride>,
+  nameOf: (t: SVGTextElement) => string | undefined,
+) => {
+  const svg = previewEl.querySelector<SVGSVGElement>("svg");
+  if (!svg) return;
+  const scale = mapContentScale(svg);
+  svg.querySelectorAll<SVGTextElement>(selector).forEach((t) => {
+    const name = nameOf(t);
+    if (!name) return;
+    t.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const startSvg = toSvgPoint(svg, e.clientX, e.clientY);
+      const start = map.get(name) ?? {};
+      const sdx = start.dx ?? 0;
+      const sdy = start.dy ?? 0;
+      let raf: number | null = null;
+      const onMove = (ev: PointerEvent) => {
+        const cur = previewEl.querySelector<SVGSVGElement>("svg");
+        if (!cur) return;
+        const p = toSvgPoint(cur, ev.clientX, ev.clientY);
+        const o = map.get(name) ?? {};
+        o.dx = sdx + (p.x - startSvg.x) / scale;
+        o.dy = sdy + (p.y - startSvg.y) / scale;
+        map.set(name, o);
+        if (raf === null) raf = requestAnimationFrame(() => { recompose(); raf = null; });
+      };
+      const onUp = () => {
+        if (raf !== null) cancelAnimationFrame(raf);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+        recompose();
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    });
+  });
 };
 
 // -- Overlay drag on preview SVG ---------------------------------------------
@@ -4958,6 +5221,9 @@ type SavedProject = {
   atlasInfo?: { xFrac: number; yFrac: number };
   canvasBg?: { override: boolean; color: string };
   waterOverrides?: Record<string, { x: number; y: number }>;
+  placeLabelOverrides?: Record<string, LabelOverride>;
+  streetLabelOverrides?: Record<string, LabelOverride>;
+  waterLabelOverrides?: Record<string, LabelOverride>;
   hiddenLayerKeys: string[];
   frame: string;
   overlays: Overlay[];
@@ -5070,6 +5336,9 @@ const saveProject = () => {
     },
     atlasInfo: { xFrac: atlasInfoXFrac, yFrac: atlasInfoYFrac },
     waterOverrides: Object.fromEntries(waterOverrides),
+    placeLabelOverrides: Object.fromEntries(placeLabelOverrides),
+    streetLabelOverrides: Object.fromEntries(streetLabelOverrides),
+    waterLabelOverrides: Object.fromEntries(waterLabelStyleOverrides),
     canvasBg: {
       override: canvasBgOverrideToggle.checked,
       color: canvasBgColorInput.value,
@@ -5204,6 +5473,25 @@ const applyProject = (p: SavedProject) => {
       waterOverrides.set(name, pos);
     }
   }
+  placeLabelOverrides.clear();
+  if (p.placeLabelOverrides) {
+    for (const [name, ov] of Object.entries(p.placeLabelOverrides)) {
+      placeLabelOverrides.set(name, ov);
+    }
+  }
+  streetLabelOverrides.clear();
+  if (p.streetLabelOverrides) {
+    for (const [name, ov] of Object.entries(p.streetLabelOverrides)) {
+      streetLabelOverrides.set(name, ov);
+    }
+  }
+  waterLabelStyleOverrides.clear();
+  if (p.waterLabelOverrides) {
+    for (const [name, ov] of Object.entries(p.waterLabelOverrides)) {
+      waterLabelStyleOverrides.set(name, ov);
+    }
+  }
+  lastPlaceNamesKey = ""; // force the editor list to rebuild on next compose
   freeformControls.hidden = currentFrame().id !== "freeform";
   const hiddenSet = new Set(p.hiddenLayerKeys ?? []);
   for (const cb of layerCheckboxes()) {
