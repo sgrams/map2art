@@ -161,6 +161,96 @@ async fn post_render(
         .body(svg)
 }
 
+#[derive(Deserialize)]
+struct RasterRequest {
+    /// Full composed SVG (outer canvas, overlays, frames — whatever the
+    /// frontend wants to bake into the image).
+    svg: String,
+    /// Target raster width in pixels. Height is derived from the SVG's
+    /// viewBox aspect ratio.
+    width_px: u32,
+    /// Target raster height in pixels.
+    height_px: u32,
+    /// Optional opaque fallback background. Painted before the SVG is drawn
+    /// so the PNG never ends up transparent regardless of theme.
+    #[serde(default)]
+    background: Option<String>,
+}
+
+fn parse_hex_color(s: &str) -> Option<(u8, u8, u8)> {
+    let s = s.trim();
+    let s = s.strip_prefix('#')?;
+    match s.len() {
+        6 => {
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            Some((r, g, b))
+        }
+        3 => {
+            let r = u8::from_str_radix(&s[0..1], 16).ok()? * 17;
+            let g = u8::from_str_radix(&s[1..2], 16).ok()? * 17;
+            let b = u8::from_str_radix(&s[2..3], 16).ok()? * 17;
+            Some((r, g, b))
+        }
+        _ => None,
+    }
+}
+
+/// Rasterize the composed SVG with resvg and return a PNG. This runs on the
+/// backend specifically because Firefox (and to a lesser extent other
+/// browsers) drops CSS rules during `<img>`-based SVG rasterization, which
+/// the client-side downloadPng path used. A pure-Rust SVG renderer doesn't
+/// care about any of that.
+async fn post_raster(body: web::Json<RasterRequest>) -> impl Responder {
+    let RasterRequest {
+        svg,
+        width_px,
+        height_px,
+        background,
+    } = body.into_inner();
+    if width_px == 0 || height_px == 0 || width_px > 16384 || height_px > 16384 {
+        return HttpResponse::BadRequest().body("width/height must be in 1..=16384");
+    }
+    let opt = resvg::usvg::Options::default();
+    let tree = match resvg::usvg::Tree::from_str(&svg, &opt) {
+        Ok(t) => t,
+        Err(e) => {
+            error!("resvg parse failed: {e}");
+            return HttpResponse::BadRequest().body(format!("svg parse error: {e}"));
+        }
+    };
+    let svg_size = tree.size();
+    let sx = width_px as f32 / svg_size.width();
+    let sy = height_px as f32 / svg_size.height();
+    let mut pixmap = match resvg::tiny_skia::Pixmap::new(width_px, height_px) {
+        Some(p) => p,
+        None => {
+            return HttpResponse::InternalServerError().body("pixmap alloc failed");
+        }
+    };
+    // Pre-fill with the requested background so any transparent areas left by
+    // the SVG (e.g. font-loading gaps) end up opaque in the PNG.
+    if let Some((r, g, b)) = background.as_deref().and_then(parse_hex_color) {
+        pixmap.fill(resvg::tiny_skia::Color::from_rgba8(r, g, b, 255));
+    } else {
+        pixmap.fill(resvg::tiny_skia::Color::from_rgba8(0xfa, 0xfa, 0xfa, 255));
+    }
+    let transform = resvg::tiny_skia::Transform::from_scale(sx, sy);
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+    let bytes = match pixmap.encode_png() {
+        Ok(b) => b,
+        Err(e) => {
+            error!("png encode failed: {e}");
+            return HttpResponse::InternalServerError()
+                .body(format!("png encode error: {e}"));
+        }
+    };
+    HttpResponse::Ok()
+        .content_type("image/png")
+        .body(bytes)
+}
+
 async fn get_style(state: web::Data<AppState>) -> impl Responder {
     let css = state.styles.read().await.clone();
     HttpResponse::Ok().content_type("text/css").body(css)
@@ -271,9 +361,14 @@ async fn main() -> Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
+            // Composed map SVGs can be several MB on dense bboxes — bump the
+            // JSON body limit from the actix default (32 KB) so /api/raster
+            // can accept them.
+            .app_data(web::JsonConfig::default().limit(64 * 1024 * 1024))
             .wrap(middleware::Logger::default())
             .wrap(Cors::permissive())
             .route("/api/render", web::post().to(post_render))
+            .route("/api/raster", web::post().to(post_raster))
             .route("/api/style", web::get().to(get_style))
             .route("/api/style", web::put().to(put_style))
             .route("/api/themes", web::get().to(list_themes))

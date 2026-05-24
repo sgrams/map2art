@@ -4139,57 +4139,28 @@ const downloadPng = async () => {
   const widthPx = Math.max(1, Math.round((cw * dpi) / 25.4));
   const heightPx = Math.max(1, Math.round((ch * dpi) / 25.4));
 
-  // Force the outer <svg> to have a pixel-sized intrinsic size matching our
-  // target output. Without this, browsers fall back to the SVG's mm-based
-  // intrinsic size (≈ 96/25.4 px per mm), which gets resampled blurrily and,
-  // in some browsers, refuses to rasterize at all when loaded via <img>.
-  const composedForRaster = composed.replace(
-    /<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 [^"]+" width="[^"]+" height="[^"]+">/,
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${cw} ${ch}" width="${widthPx}" height="${heightPx}">`,
-  );
-
+  // Rasterize on the backend with resvg (a real SVG renderer) instead of
+  // round-tripping through <img>/createImageBitmap, which mis-renders the
+  // composed SVG in Firefox (descendant CSS combinators get dropped during
+  // <img>-based SVG rasterization, leaving polylines black-filled).
   setStatus(`rasterizing ${widthPx}×${heightPx}…`);
   downloadPngBtn.disabled = true;
-  const blob0 = new Blob([composedForRaster], { type: "image/svg+xml;charset=utf-8" });
-  const url = URL.createObjectURL(blob0);
   try {
-    // Prefer createImageBitmap with an explicit resize — it gives the browser
-    // an opportunity to rasterize the SVG at the requested pixel dimensions
-    // directly, sidestepping <img>'s mm-intrinsic-sizing quirks. Falls back
-    // to <img> + drawImage for browsers/contexts where the SVG path isn't
-    // supported by createImageBitmap.
-    // Chromium doesn't decode SVG blobs via createImageBitmap (the
-    // earlier code path that tried to use it always rejects), so use the
-    // <img> path directly. <img> handles SVG reliably given pixel-sized
-    // intrinsic dimensions (which we patched in above).
-    const img = new Image();
-    img.width = widthPx;
-    img.height = heightPx;
-    img.src = url;
-    await img.decode();
-
-    const canvas = document.createElement("canvas");
-    canvas.width = widthPx;
-    canvas.height = heightPx;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("no 2d context");
-    ctx.drawImage(img, 0, 0, widthPx, heightPx);
-
-    // Paint the resolved canvas-bg *behind* whatever the SVG drew. This fills
-    // any transparent pixels left by the rasterizer (including the case where
-    // the SVG's own <rect class="canvas-bg"> never made it into the bitmap)
-    // without disturbing opaque map content.
-    ctx.globalCompositeOperation = "destination-over";
-    ctx.fillStyle = resolveCanvasBg();
-    ctx.fillRect(0, 0, widthPx, heightPx);
-    ctx.globalCompositeOperation = "source-over";
-
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
-        "image/png",
-      );
+    const res = await fetch("/api/raster", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        svg: composed,
+        width_px: widthPx,
+        height_px: heightPx,
+        background: resolveCanvasBg(),
+      }),
     });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`HTTP ${res.status}: ${txt}`);
+    }
+    const blob = await res.blob();
     const dlUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = dlUrl;
@@ -4200,7 +4171,6 @@ const downloadPng = async () => {
   } catch (err) {
     setStatus(err instanceof Error ? err.message : String(err), "error");
   } finally {
-    URL.revokeObjectURL(url);
     downloadPngBtn.disabled = false;
   }
 };

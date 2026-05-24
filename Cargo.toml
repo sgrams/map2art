@@ -9,7 +9,9 @@ actix-web = "4"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 lru = "0.12"
+png = "0.17"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+resvg = "0.45"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["fs", "sync"] }
 tracing = "0.1"
