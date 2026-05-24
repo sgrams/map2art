@@ -1942,7 +1942,14 @@ addPoiBtn.addEventListener("click", () => addPoi());
 
 // -- Routes connecting POIs -------------------------------------------------
 
+// "arrow" is a legacy line style; it's migrated to a solid line + arrow end
+// marker (see migrateRoute). New routes only use solid/dashed/dotted here.
 type RouteStyle = "solid" | "dashed" | "dotted" | "arrow";
+
+/** Optional end decoration, independent of the line style. The `*-both`
+ *  variants place the same marker at the start too (arrows point outward,
+ *  dots cap both ends). */
+type RouteMarker = "none" | "arrow" | "arrow-both" | "dot" | "dot-both";
 
 type RouteCurveCtrl = { lat: number; lng: number };
 
@@ -1951,6 +1958,8 @@ type Route = {
   name: string;
   color: string;
   style: RouteStyle;
+  /** End decoration (arrow / dot, one or both ends), independent of `style`. */
+  marker: RouteMarker;
   widthMm: number;
   /** Ordered list of POI ids the line passes through. */
   poiIds: string[];
@@ -1989,6 +1998,18 @@ const syncRouteControlPoints = (r: Route) => {
   r.controlPoints = next;
 };
 
+/** Migrate the deprecated `"arrow"` line style to a solid line + arrow end
+ *  marker, and default a missing marker to "none", so older in-memory routes
+ *  and loaded projects keep their arrowheads. Mutates and returns the route. */
+const migrateRoute = (r: Route): Route => {
+  if (r.style === "arrow") {
+    r.style = "solid";
+    if (!r.marker || r.marker === "none") r.marker = "arrow";
+  }
+  if (!r.marker) r.marker = "none";
+  return r;
+};
+
 const routes: Route[] = [];
 const newRouteId = () => "rt" + Math.random().toString(36).slice(2, 10);
 
@@ -1999,6 +2020,7 @@ const addRoute = () => {
     name: `Route ${routes.length + 1}`,
     color: "#4ea4ff",
     style: "solid",
+    marker: "none",
     widthMm: 0.8,
     poiIds: [],
     curved: false,
@@ -2050,13 +2072,32 @@ const renderRouteList = () => {
     controls.className = "route-controls";
 
     const style = document.createElement("select");
-    for (const s of ["solid", "dashed", "dotted", "arrow"] as const) {
+    for (const s of ["solid", "dashed", "dotted"] as const) {
       style.appendChild(new Option(s, s));
     }
-    style.value = r.style;
+    // A legacy "arrow" line style shows as solid here; its arrowhead lives in
+    // the marker select below (migrateRoute keeps the two in sync on load).
+    style.value = r.style === "arrow" ? "solid" : r.style;
     style.title = "Line style";
     style.addEventListener("change", () => {
       r.style = style.value as RouteStyle;
+      recompose();
+    });
+
+    const marker = document.createElement("select");
+    for (const [val, label] of [
+      ["none", "no ends"],
+      ["arrow", "arrow"],
+      ["arrow-both", "arrows ↔"],
+      ["dot", "dot"],
+      ["dot-both", "dots ↔"],
+    ] as const) {
+      marker.appendChild(new Option(label, val));
+    }
+    marker.value = r.marker ?? "none";
+    marker.title = "End markers — arrow or dot; ↔ places one at both ends";
+    marker.addEventListener("change", () => {
+      r.marker = marker.value as RouteMarker;
       recompose();
     });
 
@@ -2121,7 +2162,7 @@ const renderRouteList = () => {
       recompose();
     });
 
-    controls.append(style, color, width, curveLbl, resetCurve, del);
+    controls.append(style, marker, color, width, curveLbl, resetCurve, del);
     li.append(name, seq, controls);
     routeListEl.appendChild(li);
   }
@@ -2211,25 +2252,45 @@ const renderRoutes = (
     }
     if (segPts.length < 2) continue;
 
+    // Normalize the legacy "arrow" line style into solid line + arrow marker.
+    let lineStyle: RouteStyle = r.style;
+    let marker: RouteMarker = r.marker ?? "none";
+    if (lineStyle === "arrow") {
+      lineStyle = "solid";
+      if (marker === "none") marker = "arrow";
+    }
+
     const sw = Math.max(0.15, r.widthMm).toFixed(2);
     let dashAttr = "";
-    let markerAttr = "";
-    switch (r.style) {
-      case "dashed":
-        dashAttr = ` stroke-dasharray="${(r.widthMm * 4).toFixed(2)} ${(r.widthMm * 2).toFixed(2)}"`;
-        break;
-      case "dotted":
-        dashAttr = ` stroke-dasharray="${(r.widthMm * 0.5).toFixed(2)} ${(r.widthMm * 1.8).toFixed(2)}"`;
-        break;
-      case "arrow":
-        markerAttr = ` marker-end="url(#arrow-${r.id})"`;
-        defs +=
-          `<marker id="arrow-${r.id}" viewBox="0 0 10 10" ` +
-          `refX="9" refY="5" markerWidth="${(r.widthMm * 5).toFixed(2)}" ` +
-          `markerHeight="${(r.widthMm * 5).toFixed(2)}" orient="auto-start-reverse">` +
-          `<path d="M0,0 L10,5 L0,10 Z" fill="${r.color}"/></marker>`;
-        break;
+    if (lineStyle === "dashed") {
+      dashAttr = ` stroke-dasharray="${(r.widthMm * 4).toFixed(2)} ${(r.widthMm * 2).toFixed(2)}"`;
+    } else if (lineStyle === "dotted") {
+      dashAttr = ` stroke-dasharray="${(r.widthMm * 0.5).toFixed(2)} ${(r.widthMm * 1.8).toFixed(2)}"`;
     }
+
+    // End markers are independent of the line style: an arrow head or a filled
+    // dot, at the end only or (the `*-both` variants) at both ends. One marker
+    // def is reused for both ends; arrows use orient="auto-start-reverse" so the
+    // start arrow points outward.
+    let markerAttr = "";
+    if (marker === "arrow" || marker === "arrow-both") {
+      const sz = (r.widthMm * 5).toFixed(2);
+      defs +=
+        `<marker id="arrow-${r.id}" viewBox="0 0 10 10" refX="9" refY="5" ` +
+        `markerWidth="${sz}" markerHeight="${sz}" orient="auto-start-reverse">` +
+        `<path d="M0,0 L10,5 L0,10 Z" fill="${r.color}"/></marker>`;
+      markerAttr = ` marker-end="url(#arrow-${r.id})"`;
+      if (marker === "arrow-both") markerAttr += ` marker-start="url(#arrow-${r.id})"`;
+    } else if (marker === "dot" || marker === "dot-both") {
+      const sz = (r.widthMm * 4).toFixed(2);
+      defs +=
+        `<marker id="dot-${r.id}" viewBox="0 0 10 10" refX="5" refY="5" ` +
+        `markerWidth="${sz}" markerHeight="${sz}" orient="auto">` +
+        `<circle cx="5" cy="5" r="4.2" fill="${r.color}"/></marker>`;
+      markerAttr = ` marker-end="url(#dot-${r.id})"`;
+      if (marker === "dot-both") markerAttr += ` marker-start="url(#dot-${r.id})"`;
+    }
+
     const common =
       `fill="none" stroke="${r.color}" stroke-width="${sw}" ` +
       `stroke-linecap="round" stroke-linejoin="round"${dashAttr}${markerAttr}`;
@@ -2256,7 +2317,7 @@ const renderRoutes = (
       }
       const d = buildCurvedPathD(pts, ctrls);
       body +=
-        `    <path class="route route-${r.style} route-curved" data-id="${r.id}" d="${d}" ${common}/>\n`;
+        `    <path class="route route-${lineStyle} route-curved" data-id="${r.id}" d="${d}" ${common}/>\n`;
       if (!forExport) {
         const handleR = Math.max(0.9, r.widthMm * 1.8);
         const handleStroke = Math.max(0.18, r.widthMm * 0.45).toFixed(2);
@@ -2275,7 +2336,7 @@ const renderRoutes = (
         .map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`)
         .join(" ");
       body +=
-        `    <polyline class="route route-${r.style}" data-id="${r.id}" points="${pointsStr}" ${common}/>\n`;
+        `    <polyline class="route route-${lineStyle}" data-id="${r.id}" points="${pointsStr}" ${common}/>\n`;
     }
   }
   if (body) body = `  <g class="layer-routes">\n${body}  </g>\n`;
@@ -4714,11 +4775,13 @@ const applyProject = (p: SavedProject) => {
       name: r.name,
       color: r.color,
       style: r.style,
+      marker: r.marker ?? "none",
       widthMm: r.widthMm,
       poiIds: (r.poiIds ?? []).slice(),
       curved: r.curved ?? false,
       controlPoints: (r.controlPoints ?? []).map((c: RouteCurveCtrl) => ({ ...c })),
     };
+    migrateRoute(loaded);
     syncRouteControlPoints(loaded);
     routes.push(loaded);
   }

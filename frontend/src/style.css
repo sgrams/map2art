@@ -644,7 +644,7 @@ body {
 }
 .route-controls {
   display: grid;
-  grid-template-columns: 1fr 2.4em 2.4em auto auto auto;
+  grid-template-columns: 1fr 1.3fr 2.4em 2.4em auto auto auto;
   gap: 0.35rem;
   align-items: center;
 }
