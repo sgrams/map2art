@@ -7,7 +7,7 @@ mod render;
 
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use actix_cors::Cors;
@@ -197,6 +197,24 @@ fn parse_hex_color(s: &str) -> Option<(u8, u8, u8)> {
     }
 }
 
+/// System-font database, built once and shared across raster requests.
+///
+/// `usvg::Options::default()` ships an empty font database; with no fonts,
+/// resvg cannot shape any `<text>` and silently omits it from the output. We
+/// load the system fonts once (it's comparatively slow) behind a `OnceLock`
+/// and clone the `Arc` into each request's options.
+fn shared_fontdb() -> Arc<resvg::usvg::fontdb::Database> {
+    static FONTDB: OnceLock<Arc<resvg::usvg::fontdb::Database>> = OnceLock::new();
+    FONTDB
+        .get_or_init(|| {
+            let mut db = resvg::usvg::fontdb::Database::new();
+            db.load_system_fonts();
+            info!("loaded {} font faces for PNG rasterization", db.len());
+            Arc::new(db)
+        })
+        .clone()
+}
+
 /// Rasterize the composed SVG with resvg and return a PNG. This runs on the
 /// backend specifically because Firefox (and to a lesser extent other
 /// browsers) drops CSS rules during `<img>`-based SVG rasterization, which
@@ -212,7 +230,13 @@ async fn post_raster(body: web::Json<RasterRequest>) -> impl Responder {
     if width_px == 0 || height_px == 0 || width_px > 16384 || height_px > 16384 {
         return HttpResponse::BadRequest().body("width/height must be in 1..=16384");
     }
-    let opt = resvg::usvg::Options::default();
+    // Without a populated font database resvg silently drops every <text>
+    // node (POI labels, text overlays, the attribution, water/scale labels),
+    // so the PNG would show shapes but no text. Share one system-font db.
+    let opt = resvg::usvg::Options {
+        fontdb: shared_fontdb(),
+        ..Default::default()
+    };
     let tree = match resvg::usvg::Tree::from_str(&svg, &opt) {
         Ok(t) => t,
         Err(e) => {
@@ -344,6 +368,10 @@ async fn main() -> Result<()> {
         styles: RwLock::new(styles),
         cache: Mutex::new(LruCache::new(NonZeroUsize::new(CACHE_CAPACITY).unwrap())),
     });
+
+    // Warm the system-font database off the reactor so the first PNG export
+    // doesn't pay for the font scan.
+    tokio::task::spawn_blocking(shared_fontdb).await.ok();
 
     let bind = args.bind.clone();
     info!("listening on http://{bind}");
