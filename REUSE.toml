@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2026 Stan Grams <sjg@haxx.space>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+version = 1
+
+# Auto-generated and/or JSON-format files can't carry inline SPDX headers
+# (Cargo and npm rewrite Cargo.lock / package-lock.json, and JSON has no
+# comment syntax). They inherit the project's licensing here.
+
+[[annotations]]
+path = "Cargo.lock"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Stan Grams <sjg@haxx.space>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = "frontend/package.json"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Stan Grams <sjg@haxx.space>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = "frontend/package-lock.json"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Stan Grams <sjg@haxx.space>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = "frontend/tsconfig.json"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Stan Grams <sjg@haxx.space>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

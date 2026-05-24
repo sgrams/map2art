@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Stan Grams <sjg@haxx.space>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
 /* mondrian — primary colour blocks, thick black grid lines. */
 
 .background { fill: #f4f4ee; }

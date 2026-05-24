@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Stan Grams <sjg@haxx.space>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import maplibregl, { LngLat } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { EditorView, basicSetup } from "codemirror";

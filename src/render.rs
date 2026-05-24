@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Stan Grams <sjg@haxx.space>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
