@@ -1,0 +1,99 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Stan Grams <sjg@haxx.space>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/* pope — papal yellow & gold: Vatican gold linework on soft yellow. */
+
+.background { fill: #fdf3c8; }
+
+.layer-landuse :where(polygon, path) { fill: #f6e9ad; stroke: none; }
+.landuse-forest      { fill: #d8d77a; }
+.landuse-grass       { fill: #ece08a; }
+.landuse-residential { fill: #f7ecb4; }
+.landuse-industrial  { fill: #ecdf9c; }
+.landuse-commercial  { fill: #f2e6a6; }
+
+.layer-leisure :where(polygon, path) { fill: #e2dc88; stroke: none; }
+.leisure-park    { fill: #d2cc6a; }
+.leisure-garden  { fill: #e0da82; }
+.leisure-pitch   { fill: #c6c05c; }
+
+.layer-water :where(polygon, path), .water { fill: #cfe0ee; stroke: #9cc0d4; stroke-width: 1.2; }
+.layer-waterway polyline, .layer-waterway path { fill: none; stroke: #9cc0d4; stroke-width: 2.4; }
+.coastline { fill: none; stroke: #7fa4bd; stroke-width: 3; }
+
+.layer-building :where(polygon, path) { fill: #f0d98a; stroke: #c8a84e; stroke-width: 0.4; }
+
+.layer-rail polyline, .layer-rail path {
+  fill: none; stroke: #b89a40; stroke-width: 1.6;
+  stroke-dasharray: 5 5;
+}
+
+.layer-road-casings polyline, .layer-road-casings path {
+  fill: none;
+  stroke: #fdf3c8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.road-motorway-casing    { stroke-width: 9.5; }
+.road-trunk-casing       { stroke-width: 8.5; }
+.road-primary-casing     { stroke-width: 7.5; }
+.road-secondary-casing   { stroke-width: 6.5; }
+.road-tertiary-casing    { stroke-width: 5.5; }
+.road-residential-casing { stroke-width: 4.0; }
+.road-service-casing     { stroke-width: 2.4; }
+.road-path-casing        { stroke: none; }
+.road-other-casing       { stroke-width: 2.6; }
+
+.layer-road polyline, .layer-road path {
+  fill: none;
+  stroke: #c8a415;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.road-path        { stroke: #d8c060; stroke-width: 1.2; stroke-dasharray: 3 3; }
+.road-service     { stroke: #cdac2e; stroke-width: 1.4; }
+.road-residential { stroke: #c8a415; stroke-width: 2.4; }
+.road-tertiary    { stroke: #ba9710; stroke-width: 3.5; }
+.road-secondary   { stroke: #a8870c; stroke-width: 4.5; }
+.road-primary     { stroke: #98780a; stroke-width: 5.5; }
+.road-trunk       { stroke: #8a6c08; stroke-width: 6.5; }
+.road-motorway    { stroke: #7c6006; stroke-width: 7.5; }
+.road-other       { stroke: #d0b240; stroke-width: 1.6; }
+
+.layer-road-labels text {
+  font-family: Georgia, "Times New Roman", serif;
+  fill: #7c6006;
+  paint-order: stroke;
+  stroke: #fdf3c8;
+  stroke-width: 2.4;
+  letter-spacing: 0.05em;
+  font-style: italic;
+}
+
+.layer-places text {
+  font-family: Georgia, "Times New Roman", serif;
+  fill: #5e4a04;
+  paint-order: stroke;
+  stroke: #fdf3c8;
+  stroke-width: 2.6;
+}
+.place-city { font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; }
+.place-town { font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+.place-village { font-weight: 500; font-style: italic; }
+.place-suburb { font-style: italic; fill: #7c6006; }
+
+.layer-water-labels text {
+  font-family: Georgia, "Times New Roman", serif;
+  fill: #4a6e7e;
+  paint-order: stroke;
+  stroke: #fdf3c8;
+  stroke-width: 2.2;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+.water-label.water-waterway { font-size: 0.8em; }
+.water-label.water-water    { font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
