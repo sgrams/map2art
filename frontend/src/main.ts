@@ -733,6 +733,10 @@ const loadThemeIntoEditor = async (name: string) => {
 
 themeSelect.addEventListener("change", async () => {
   await loadThemeIntoEditor(themeSelect.value);
+  // Auto re-render so the new theme shows immediately. Only when a map is
+  // already on screen — re-render restyles the cached Overpass data (no
+  // refetch), so it's cheap; before the first render there's nothing to show.
+  if (lastMapSvg) void render();
 });
 
 // -- Canvas size -------------------------------------------------------------
