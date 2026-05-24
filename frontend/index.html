@@ -48,6 +48,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <label>Canvas
               <select id="canvas-size"></select>
             </label>
+            <span class="custom-canvas-fields" id="custom-canvas-fields" hidden>
+              <input id="canvas-custom-w" type="number" min="10" step="1" value="210" />
+              <span class="sep">×</span>
+              <input id="canvas-custom-h" type="number" min="10" step="1" value="297" />
+              <span class="unit">mm</span>
+            </span>
             <button id="canvas-rotate-btn" type="button" title="Rotate canvas">⟲</button>
             <span class="toolbar-sep"></span>
             <label>Template
@@ -81,6 +87,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div class="style-panel">
             <h3>Map theme</h3>
             <select id="theme" class="full-width"></select>
+            <div class="theme-gallery" id="theme-gallery"></div>
+
+            <h3>Map typeface</h3>
+            <label class="check-label"><input id="global-font-toggle" type="checkbox" /> Use one font for all map text</label>
+            <div class="coords-grid">
+              <label>Font <select id="global-font"></select></label>
+            </div>
+            <p class="overlays-hint">Overrides the theme's and each element's own font while on. Off = per-element fonts (theme labels, POI, coords) apply.</p>
 
             <h3>Map proportion</h3>
             <div class="style-row">
@@ -343,6 +357,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <li><label class="check-label"><input id="lake-labels-toggle" type="checkbox" /> Lake names</label></li>
               <li><label class="check-label"><input id="river-labels-toggle" type="checkbox" /> River / stream names</label></li>
             </ul>
+            <h3>Road accent</h3>
+            <label class="check-label"><input id="road-accent-toggle" type="checkbox" /> Recolor all roads</label>
+            <div class="coords-grid">
+              <label>Color <input id="road-accent-color" type="color" value="#333333" /></label>
+            </div>
+            <p class="overlays-hint">Paints every road one color, overriding the theme's road hierarchy — a clean monochrome network in your accent.</p>
+
             <h3>Label style</h3>
             <label class="check-label"><input id="label-style-toggle" type="checkbox" /> Override label color &amp; font</label>
             <div class="coords-grid">

@@ -101,6 +101,11 @@ const routeListEl = $<HTMLUListElement>("route-list");
 const routeEmptyEl = $<HTMLParagraphElement>("route-empty");
 const resetRectBtn = $<HTMLButtonElement>("reset-rect-btn");
 const themeSelect = $<HTMLSelectElement>("theme");
+const themeGalleryEl = $<HTMLDivElement>("theme-gallery");
+const globalFontToggle = $<HTMLInputElement>("global-font-toggle");
+const globalFontSelect = $<HTMLSelectElement>("global-font");
+const roadAccentToggle = $<HTMLInputElement>("road-accent-toggle");
+const roadAccentColorInput = $<HTMLInputElement>("road-accent-color");
 const paperSelect = $<HTMLSelectElement>("paper");
 const rotateBtn = $<HTMLButtonElement>("rotate-btn");
 const lockBtn = $<HTMLButtonElement>("lock-btn");
@@ -157,6 +162,9 @@ const bboxScaleEl = $<HTMLDivElement>("bbox-scale");
 const mapEl = $<HTMLDivElement>("map");
 const canvasSelect = $<HTMLSelectElement>("canvas-size");
 const canvasRotateBtn = $<HTMLButtonElement>("canvas-rotate-btn");
+const customCanvasFields = $<HTMLSpanElement>("custom-canvas-fields");
+const canvasCustomWInput = $<HTMLInputElement>("canvas-custom-w");
+const canvasCustomHInput = $<HTMLInputElement>("canvas-custom-h");
 const addTextBtn = $<HTMLButtonElement>("add-text-btn");
 const addCoordsBtn = $<HTMLButtonElement>("add-coords-btn");
 const mapSearchForm = $<HTMLFormElement>("map-search");
@@ -705,6 +713,73 @@ updateLockButton();
 
 const THEME_CUSTOM = "__custom__";
 
+/** Pull a `prop: value` from the first matching rule, ignoring keywords. */
+const extractCssColor = (css: string, re: RegExp): string | null => {
+  const m = css.match(re);
+  if (m) {
+    const v = m[1].trim();
+    if (v && v !== "none" && v !== "inherit" && v !== "currentColor") return v;
+  }
+  return null;
+};
+
+/** Four representative swatch colors for a theme: paper, greenery, water, road. */
+const themeSwatchColors = (css: string): string[] => {
+  const bg = themeBackgroundColor(css);
+  const green =
+    extractCssColor(css, /\.leisure-park\s*\{[^}]*?\bfill\s*:\s*([^;}\s!]+)/i) ??
+    extractCssColor(css, /\.landuse-forest\s*\{[^}]*?\bfill\s*:\s*([^;}\s!]+)/i) ??
+    bg;
+  const water =
+    extractCssColor(css, /\.layer-water[^{]*\{[^}]*?\bfill\s*:\s*([^;}\s!]+)/i) ?? bg;
+  const road = themeLeadingColor(css);
+  return [bg, green, water, road];
+};
+
+const highlightThemeCard = () => {
+  for (const c of themeGalleryEl.querySelectorAll<HTMLElement>(".theme-card")) {
+    c.classList.toggle("selected", c.dataset.theme === themeSelect.value);
+  }
+};
+
+/** Build the visual theme picker: one card per theme with a palette swatch
+ *  extracted from its CSS. Clicking a card selects + (auto-)renders it. */
+const buildThemeGallery = async (names: string[]) => {
+  themeGalleryEl.innerHTML = "";
+  const cssList = await Promise.all(
+    names.map((n) =>
+      fetch(`/api/themes/${encodeURIComponent(n)}`)
+        .then((r) => (r.ok ? r.text() : ""))
+        .catch(() => ""),
+    ),
+  );
+  names.forEach((name, i) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "theme-card" + (themeSelect.value === name ? " selected" : "");
+    card.dataset.theme = name;
+    card.title = name;
+    const sw = document.createElement("div");
+    sw.className = "theme-card-swatch";
+    for (const c of themeSwatchColors(cssList[i])) {
+      const seg = document.createElement("span");
+      seg.style.background = c;
+      sw.appendChild(seg);
+    }
+    const lbl = document.createElement("span");
+    lbl.className = "theme-card-name";
+    lbl.textContent = name;
+    card.append(sw, lbl);
+    card.addEventListener("click", () => {
+      if (themeSelect.value === name) return;
+      themeSelect.value = name;
+      themeSelect.dispatchEvent(new Event("change"));
+      highlightThemeCard();
+    });
+    themeGalleryEl.appendChild(card);
+  });
+};
+
 const loadThemeList = async () => {
   themeSelect.innerHTML = "";
   themeSelect.appendChild(new Option("Custom (saved)", THEME_CUSTOM));
@@ -715,6 +790,7 @@ const loadThemeList = async () => {
       for (const n of names) {
         themeSelect.appendChild(new Option(n, n));
       }
+      void buildThemeGallery(names);
     }
   } catch {
     /* leave only Custom */
@@ -732,6 +808,7 @@ const loadThemeIntoEditor = async (name: string) => {
 };
 
 themeSelect.addEventListener("change", async () => {
+  highlightThemeCard();
   await loadThemeIntoEditor(themeSelect.value);
   // Auto re-render so the new theme shows immediately. Only when a map is
   // already on screen — re-render restyles the cached Overpass data (no
@@ -745,6 +822,7 @@ type Canvas = { id: string; label: string; short: number; long: number };
 
 const CANVASES: Canvas[] = [
   { id: "match",  label: "Match map (no margins)", short: 0,   long: 0   },
+  { id: "custom", label: "Custom…",                short: 0,   long: 0   },
   { id: "10x15",  label: "10×15 cm",               short: 100, long: 150 },
   { id: "13x18",  label: "13×18 cm",               short: 130, long: 180 },
   { id: "a4",     label: "A4 (210×297 mm)",        short: 210, long: 297 },
@@ -758,23 +836,44 @@ let canvasLandscape = true;
 const currentCanvas = (): Canvas =>
   CANVASES.find((c) => c.id === canvasSelect.value) ?? CANVASES[0];
 
+const updateCustomCanvasVisibility = () => {
+  customCanvasFields.hidden = currentCanvas().id !== "custom";
+};
+
 /** Returns { w, h } in mm (the canvas viewBox units). For "match" we fall
- *  back to a sensible default keyed off the map aspect at compose time. */
+ *  back to a sensible default keyed off the map aspect at compose time; for
+ *  "custom" we read the W×H inputs (oriented by the landscape toggle). */
 const canvasDims = (mapAspect: number): { w: number; h: number } => {
   const c = currentCanvas();
   if (c.id === "match") {
     const h = 200;
     return { w: h * mapAspect, h };
   }
-  return canvasLandscape
-    ? { w: c.long, h: c.short }
-    : { w: c.short, h: c.long };
+  let short: number;
+  let long: number;
+  if (c.id === "custom") {
+    const w = Math.max(10, parseFloat(canvasCustomWInput.value) || 210);
+    const h = Math.max(10, parseFloat(canvasCustomHInput.value) || 297);
+    short = Math.min(w, h);
+    long = Math.max(w, h);
+  } else {
+    short = c.short;
+    long = c.long;
+  }
+  return canvasLandscape ? { w: long, h: short } : { w: short, h: long };
 };
 
 canvasSelect.addEventListener("change", () => {
+  updateCustomCanvasVisibility();
   updateRectScale();
   recompose();
 });
+for (const el of [canvasCustomWInput, canvasCustomHInput] as const) {
+  el.addEventListener("input", () => {
+    updateRectScale();
+    recompose();
+  });
+}
 canvasRotateBtn.addEventListener("click", () => {
   canvasLandscape = !canvasLandscape;
   updateRectScale();
@@ -1178,6 +1277,26 @@ for (const f of FONT_FAMILIES) {
   poiLabelFontSelect.appendChild(new Option(f.label, f.css));
 }
 poiLabelFontSelect.value = POI_DEFAULT_FONT;
+for (const f of FONT_FAMILIES) {
+  globalFontSelect.appendChild(new Option(f.label, f.css));
+}
+globalFontSelect.value = DEFAULT_FONT;
+const syncGlobalFontEnabled = () => {
+  globalFontSelect.disabled = !globalFontToggle.checked;
+};
+globalFontToggle.addEventListener("change", syncGlobalFontEnabled);
+syncGlobalFontEnabled();
+const syncRoadAccentEnabled = () => {
+  roadAccentColorInput.disabled = !roadAccentToggle.checked;
+};
+roadAccentToggle.addEventListener("change", syncRoadAccentEnabled);
+syncRoadAccentEnabled();
+for (const el of [
+  globalFontToggle, globalFontSelect, roadAccentToggle, roadAccentColorInput,
+] as const) {
+  el.addEventListener("input", () => recompose());
+  el.addEventListener("change", () => recompose());
+}
 const syncPoiOutlineEnabled = () => {
   poiLabelOutlineColorInput.disabled = poiLabelOutlineSelect.value !== "custom";
 };
@@ -3747,19 +3866,39 @@ const composeSvg = (forExport = false): string | null => {
     ? rotationOpen + latLngAnchored + rotationClose
     : latLngAnchored;
 
-  // Optional user override of every map label's color + typeface. Emitted as a
-  // <style> AFTER the theme CSS (and marked !important) so it wins over the
-  // theme's own label rules — for streets, places and water alike.
-  const labelOverride = labelStyleToggle.checked
-    ? `  <style>.layer-road-labels text, .layer-places text, .layer-water-labels text { ` +
-      `fill: ${labelColorInput.value} !important; font-family: ${labelFontSelect.value} !important; }</style>\n`
+  // Optional user style overrides, emitted as a <style> AFTER the theme CSS
+  // and marked !important so they win over the theme (and per-element font
+  // attributes). resvg merges multiple <style> blocks and honours !important.
+  const overrideRules: string[] = [];
+  if (labelStyleToggle.checked) {
+    overrideRules.push(
+      `.layer-road-labels text, .layer-places text, .layer-water-labels text { ` +
+        `fill: ${labelColorInput.value} !important; font-family: ${labelFontSelect.value} !important; }`,
+    );
+  }
+  if (roadAccentToggle.checked) {
+    overrideRules.push(
+      `.layer-road polyline, .layer-road path { stroke: ${roadAccentColorInput.value} !important; }`,
+    );
+  }
+  if (globalFontToggle.checked) {
+    // One typeface across all map text (labels, POI, coords, attribution),
+    // excluding user text overlays which keep their own font.
+    overrideRules.push(
+      `.layer-road-labels text, .layer-places text, .layer-water-labels text, ` +
+        `.poi text, .cross text, .graticule text, .info-strip text, .attribution text ` +
+        `{ font-family: ${globalFontSelect.value} !important; }`,
+    );
+  }
+  const styleOverride = overrideRules.length
+    ? `  <style>${overrideRules.join(" ")}</style>\n`
     : "";
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" ` +
     `viewBox="0 0 ${cw} ${ch}" width="${cw}mm" height="${ch}mm">\n` +
     (hoistedStyle ? `  ${hoistedStyle}\n` : "") +
-    labelOverride +
+    styleOverride +
     (defs ? `  ${defs}\n` : "") +
     `  <rect class="canvas-bg" width="${cw}" height="${ch}" fill="${canvasBg}"/>\n` +
     wrappedLatLng +
@@ -4753,7 +4892,7 @@ type SavedProject = {
   rect: { south: number; west: number; north: number; east: number };
   paper: { id: string; landscape: boolean; customW: number; customH: number };
   aspectLocked: boolean;
-  canvas: { id: string; landscape: boolean };
+  canvas: { id: string; landscape: boolean; customW?: number; customH?: number };
   theme: string;
   css: string;
   width: number;
@@ -4761,6 +4900,8 @@ type SavedProject = {
   streetLabels: boolean;
   placeLabels: boolean;
   labelStyle?: { override: boolean; color: string; font: string };
+  globalFont?: { enabled: boolean; font: string };
+  roadAccent?: { enabled: boolean; color: string };
   coordFormat?: string;
   coordPrecision?: number;
   poiLabel?: {
@@ -4837,7 +4978,12 @@ const saveProject = () => {
       customH: parseFloat(customHInput.value) || 200,
     },
     aspectLocked,
-    canvas: { id: canvasSelect.value, landscape: canvasLandscape },
+    canvas: {
+      id: canvasSelect.value,
+      landscape: canvasLandscape,
+      customW: parseFloat(canvasCustomWInput.value) || 210,
+      customH: parseFloat(canvasCustomHInput.value) || 297,
+    },
     theme: themeSelect.value,
     css: cssEditor.value,
     width: parseFloat(widthInput.value) || 2000,
@@ -4849,6 +4995,8 @@ const saveProject = () => {
       color: labelColorInput.value,
       font: labelFontSelect.value,
     },
+    globalFont: { enabled: globalFontToggle.checked, font: globalFontSelect.value },
+    roadAccent: { enabled: roadAccentToggle.checked, color: roadAccentColorInput.value },
     coordFormat: coordFormatSelect.value,
     coordPrecision: parseFloat(coordPrecisionInput.value) || 4,
     poiLabel: {
@@ -4968,6 +5116,16 @@ const applyProject = (p: SavedProject) => {
     labelFontSelect.value = p.labelStyle.font;
     syncLabelStyleEnabled();
   }
+  if (p.globalFont) {
+    globalFontToggle.checked = p.globalFont.enabled;
+    globalFontSelect.value = p.globalFont.font;
+    syncGlobalFontEnabled();
+  }
+  if (p.roadAccent) {
+    roadAccentToggle.checked = p.roadAccent.enabled;
+    roadAccentColorInput.value = p.roadAccent.color;
+    syncRoadAccentEnabled();
+  }
   if (p.coordFormat) coordFormatSelect.value = p.coordFormat;
   if (typeof p.coordPrecision === "number") coordPrecisionInput.value = String(p.coordPrecision);
   if (p.poiLabel) {
@@ -5085,6 +5243,9 @@ const applyProject = (p: SavedProject) => {
 
   canvasSelect.value = p.canvas.id;
   canvasLandscape = p.canvas.landscape;
+  if (typeof p.canvas.customW === "number") canvasCustomWInput.value = String(p.canvas.customW);
+  if (typeof p.canvas.customH === "number") canvasCustomHInput.value = String(p.canvas.customH);
+  updateCustomCanvasVisibility();
 
   themeSelect.value = p.theme;
   cssEditor.value = p.css;
